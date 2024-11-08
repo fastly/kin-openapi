@@ -1,6 +1,7 @@
 package openapi3
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -81,7 +82,7 @@ paths:
 	err = doc.Validate(sl.Context)
 	require.NoError(t, err)
 
-	require.Equal(t, &Schema{Type: "object"}, doc.Components.Schemas["schemaArray"].Value.Items.Value)
+	require.Equal(t, &Schema{Type: &Types{"object"}}, doc.Components.Schemas["schemaArray"].Value.Items.Value)
 }
 
 func TestIssue495WithDraft04(t *testing.T) {
@@ -112,6 +113,10 @@ paths:
 
 	sl := NewLoader()
 	sl.IsExternalRefsAllowed = true
+
+	if os.Getenv("CI") == "true" {
+		t.Skip("Running in CI: skipping so we avoid 403 error from remote schema server")
+	}
 
 	doc, err := sl.LoadFromData(spec)
 	require.NoError(t, err)

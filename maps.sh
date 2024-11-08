@@ -138,7 +138,7 @@ maplike_Pointable() {
 var _ jsonpointer.JSONPointable = (${type})(nil)
 
 // JSONLookup implements https://github.com/go-openapi/jsonpointer#JSONPointable
-func (${name} ${type#'*'}) JSONLookup(token string) (interface{}, error) {
+func (${name} ${type#'*'}) JSONLookup(token string) (any, error) {
 	if v := ${name}.Value(token); v == nil {
 		vv, _, err := jsonpointer.GetForToken(${name}.Extensions, token)
 		return vv, err
@@ -155,22 +155,38 @@ EOF
 
 
 maplike_UnMarsh() {
+	if [[ "$type" != '*'* ]]; then
+		echo "TODO: impl non-pointer receiver YAML Marshaler"
+		exit 2
+	fi
 	cat <<EOF >>"$maplike"
-// MarshalJSON returns the JSON encoding of ${type#'*'}.
-func (${name} ${type}) MarshalJSON() ([]byte, error) {
-	m := make(map[string]interface{}, ${name}.Len()+len(${name}.Extensions))
+// MarshalYAML returns the YAML encoding of ${type#'*'}.
+func (${name} ${type}) MarshalYAML() (any, error) {
+	if ${name} == nil {
+		return nil, nil
+	}
+	m := make(map[string]any, ${name}.Len()+len(${name}.Extensions))
 	for k, v := range ${name}.Extensions {
 		m[k] = v
 	}
 	for k, v := range ${name}.Map() {
 		m[k] = v
 	}
-	return json.Marshal(m)
+	return m, nil
+}
+
+// MarshalJSON returns the JSON encoding of ${type#'*'}.
+func (${name} ${type}) MarshalJSON() ([]byte, error) {
+	${name}Yaml, err := ${name}.MarshalYAML()
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(${name}Yaml)
 }
 
 // UnmarshalJSON sets ${type#'*'} to a copy of data.
 func (${name} ${type}) UnmarshalJSON(data []byte) (err error) {
-	var m map[string]interface{}
+	var m map[string]any
 	if err = json.Unmarshal(data, &m); err != nil {
 		return
 	}
@@ -182,7 +198,7 @@ func (${name} ${type}) UnmarshalJSON(data []byte) (err error) {
 	sort.Strings(ks)
 
 	x := ${type#'*'}{
-		Extensions: make(map[string]interface{}),
+		Extensions: make(map[string]any),
 		m:          make(map[string]${value_type}, len(m)),
 	}
 
@@ -190,6 +206,17 @@ func (${name} ${type}) UnmarshalJSON(data []byte) (err error) {
 		v := m[k]
 		if strings.HasPrefix(k, "x-") {
 			x.Extensions[k] = v
+			continue
+		}
+
+		if k == originKey {
+			var data []byte
+			if data, err = json.Marshal(v); err != nil {
+				return
+			}
+			if err = json.Unmarshal(data, &x.Origin); err != nil {
+				return
+			}
 			continue
 		}
 

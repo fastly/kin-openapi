@@ -108,11 +108,13 @@ func ExampleGenerator_SchemaRefs() {
 	//     "json": {},
 	//     "map": {
 	//       "additionalProperties": {
+	//         "nullable": true,
 	//         "type": "string"
 	//       },
 	//       "type": "object"
 	//     },
 	//     "ptr": {
+	//       "nullable": true,
 	//       "type": "string"
 	//     },
 	//     "slice": {
@@ -178,6 +180,7 @@ func ExampleThrowErrorOnCycle() {
 	// schemaRef: {
 	//   "properties": {
 	//     "a": {
+	//       "nullable": true,
 	//       "properties": {
 	//         "b": {
 	//           "$ref": "#/components/schemas/CyclicType0"
@@ -192,6 +195,7 @@ func ExampleThrowErrorOnCycle() {
 	//   "CyclicType0": {
 	//     "properties": {
 	//       "a": {
+	//         "nullable": true,
 	//         "properties": {
 	//           "b": {
 	//             "$ref": "#/components/schemas/CyclicType0"
@@ -216,11 +220,11 @@ func TestExportedNonTagged(t *testing.T) {
 	schemaRef, err := openapi3gen.NewSchemaRefForValue(&Bla{}, nil, openapi3gen.UseAllExportedFields())
 	require.NoError(t, err)
 	require.Equal(t, &openapi3.SchemaRef{Value: &openapi3.Schema{
-		Type: "object",
+		Type: &openapi3.Types{"object"},
 		Properties: map[string]*openapi3.SchemaRef{
-			"A":           {Value: &openapi3.Schema{Type: "string"}},
-			"another":     {Value: &openapi3.Schema{Type: "string"}},
-			"even_a_yaml": {Value: &openapi3.Schema{Type: "string"}},
+			"A":           {Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
+			"another":     {Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
+			"even_a_yaml": {Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
 		}}}, schemaRef)
 }
 
@@ -383,11 +387,11 @@ func TestCyclicReferences(t *testing.T) {
 	require.Equal(t, "#/components/schemas/ObjectDiff", schemaRef.Value.Properties["FieldCycle"].Ref)
 
 	require.NotNil(t, schemaRef.Value.Properties["SliceCycle"])
-	require.Equal(t, "array", schemaRef.Value.Properties["SliceCycle"].Value.Type)
+	require.Equal(t, &openapi3.Types{"array"}, schemaRef.Value.Properties["SliceCycle"].Value.Type)
 	require.Equal(t, "#/components/schemas/ObjectDiff", schemaRef.Value.Properties["SliceCycle"].Value.Items.Ref)
 
 	require.NotNil(t, schemaRef.Value.Properties["MapCycle"])
-	require.Equal(t, "object", schemaRef.Value.Properties["MapCycle"].Value.Type)
+	require.Equal(t, &openapi3.Types{"object"}, schemaRef.Value.Properties["MapCycle"].Value.Type)
 	require.Equal(t, "#/components/schemas/ObjectDiff", schemaRef.Value.Properties["MapCycle"].Value.AdditionalProperties.Schema.Ref)
 }
 
@@ -510,9 +514,9 @@ func TestSchemaCustomizerExcludeSchema(t *testing.T) {
 	schema, err := openapi3gen.NewSchemaRefForValue(&Bla{}, nil, openapi3gen.UseAllExportedFields(), customizer)
 	require.NoError(t, err)
 	require.Equal(t, &openapi3.SchemaRef{Value: &openapi3.Schema{
-		Type: "object",
+		Type: &openapi3.Types{"object"},
 		Properties: map[string]*openapi3.SchemaRef{
-			"Str": {Value: &openapi3.Schema{Type: "string"}},
+			"Str": {Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
 		}}}, schema)
 
 	customizer = openapi3gen.SchemaCustomizer(func(name string, ft reflect.Type, tag reflect.StructTag, schema *openapi3.Schema) error {
@@ -584,6 +588,46 @@ func ExampleNewSchemaRefForValue_recursive() {
 	//       "type": "string"
 	//     },
 	//     "field3": {
+	//       "type": "string"
+	//     }
+	//   },
+	//   "type": "object"
+	// }
+}
+
+type ID [16]byte
+
+// T implements SetSchemar, allowing it to set an OpenAPI schema.
+type T struct {
+	ID ID `json:"id"`
+}
+
+func (_ *ID) SetSchema(schema *openapi3.Schema) {
+	schema.Type = &openapi3.Types{"string"} // Assuming this matches your custom implementation
+	schema.Format = "uuid"
+}
+
+func ExampleSetSchemar() {
+	schemas := make(openapi3.Schemas)
+	instance := &T{
+		ID: ID{},
+	}
+
+	// Generate the schema for the instance
+	schemaRef, err := openapi3gen.NewSchemaRefForValue(instance, schemas)
+	if err != nil {
+		panic(err)
+	}
+	data, err := json.MarshalIndent(schemaRef, "", "  ")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("schemaRef: %s\n", data)
+	// Output:
+	// schemaRef: {
+	//   "properties": {
+	//     "id": {
+	//       "format": "uuid",
 	//       "type": "string"
 	//     }
 	//   },

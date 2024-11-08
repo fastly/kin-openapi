@@ -171,7 +171,7 @@ paths:
 
 	example := doc.Paths.Value("/").Get.Responses.Status(200).Value.Content.Get("application/json").Examples["test"]
 	require.NotNil(t, example.Value)
-	require.Equal(t, example.Value.Value.(map[string]interface{})["error"].(bool), false)
+	require.Equal(t, example.Value.Value.(map[string]any)["error"].(bool), false)
 }
 
 func TestLoadErrorOnRefMisuse(t *testing.T) {
@@ -290,7 +290,7 @@ func TestLoadFromRemoteURL(t *testing.T) {
 	doc, err := loader.LoadFromURI(url)
 	require.NoError(t, err)
 
-	require.Equal(t, "string", doc.Components.Schemas["TestSchema"].Value.Type)
+	require.Equal(t, &Types{"string"}, doc.Components.Schemas["TestSchema"].Value.Type)
 }
 
 func TestLoadWithReferenceInReference(t *testing.T) {
@@ -301,7 +301,7 @@ func TestLoadWithReferenceInReference(t *testing.T) {
 	require.NotNil(t, doc)
 	err = doc.Validate(loader.Context)
 	require.NoError(t, err)
-	require.Equal(t, "string", doc.Paths.Value("/api/test/ref/in/ref").Post.RequestBody.Value.Content["application/json"].Schema.Value.Properties["definition_reference"].Value.Type)
+	require.Equal(t, &Types{"string"}, doc.Paths.Value("/api/test/ref/in/ref").Post.RequestBody.Value.Content["application/json"].Schema.Value.Properties["definition_reference"].Value.Type)
 }
 
 func TestLoadWithRecursiveReferenceInLocalReferenceInParentSubdir(t *testing.T) {
@@ -312,7 +312,7 @@ func TestLoadWithRecursiveReferenceInLocalReferenceInParentSubdir(t *testing.T) 
 	require.NotNil(t, doc)
 	err = doc.Validate(loader.Context)
 	require.NoError(t, err)
-	require.Equal(t, "object", doc.Paths.Value("/api/test/ref/in/ref").Post.RequestBody.Value.Content["application/json"].Schema.Value.Properties["definition_reference"].Value.Type)
+	require.Equal(t, &Types{"object"}, doc.Paths.Value("/api/test/ref/in/ref").Post.RequestBody.Value.Content["application/json"].Schema.Value.Properties["definition_reference"].Value.Type)
 }
 
 func TestLoadWithRecursiveReferenceInReferenceInLocalReference(t *testing.T) {
@@ -323,7 +323,7 @@ func TestLoadWithRecursiveReferenceInReferenceInLocalReference(t *testing.T) {
 	require.NotNil(t, doc)
 	err = doc.Validate(loader.Context)
 	require.NoError(t, err)
-	require.Equal(t, "integer", doc.Paths.Value("/api/test/ref/in/ref").Post.RequestBody.Value.Content["application/json"].Schema.Value.Properties["data"].Value.Properties["definition_reference"].Value.Properties["ref_prop_part"].Value.Properties["idPart"].Value.Type)
+	require.Equal(t, &Types{"integer"}, doc.Paths.Value("/api/test/ref/in/ref").Post.RequestBody.Value.Content["application/json"].Schema.Value.Properties["data"].Value.Properties["definition_reference"].Value.Properties["ref_prop_part"].Value.Properties["idPart"].Value.Type)
 	require.Equal(t, "int64", doc.Paths.Value("/api/test/ref/in/ref").Post.RequestBody.Value.Content["application/json"].Schema.Value.Properties["data"].Value.Properties["definition_reference"].Value.Properties["ref_prop_part"].Value.Properties["idPart"].Value.Format)
 }
 
@@ -463,7 +463,7 @@ func TestLoadYamlFileWithExternalPathRef(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotNil(t, doc.Paths.Value("/test").Get.Responses.Value("200").Value.Content["application/json"].Schema.Value.Type)
-	require.Equal(t, "string", doc.Paths.Value("/test").Get.Responses.Value("200").Value.Content["application/json"].Schema.Value.Type)
+	require.Equal(t, &Types{"string"}, doc.Paths.Value("/test").Get.Responses.Value("200").Value.Content["application/json"].Schema.Value.Type)
 }
 
 func TestResolveResponseLinkRef(t *testing.T) {
@@ -520,7 +520,7 @@ func TestLinksFromOAISpec(t *testing.T) {
 	require.NoError(t, err)
 	response := doc.Paths.Value("/2.0/repositories/{username}/{slug}").Get.Responses.Status(200).Value
 	link := response.Links[`repositoryPullRequests`].Value
-	require.Equal(t, map[string]interface{}{
+	require.Equal(t, map[string]any{
 		"username": "$response.body#/owner/username",
 		"slug":     "$response.body#/slug",
 	}, link.Parameters)

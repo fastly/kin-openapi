@@ -14,19 +14,11 @@ Licensed under the [MIT License](./LICENSE).
 ## Contributors, users and sponsors
 The project has received pull requests [from many people](https://github.com/getkin/kin-openapi/graphs/contributors). Thanks to everyone!
 
-Be sure to [give back to this project](https://github.com/sponsors/fenollp) like our sponsors:
-
-<p align="center">
-	<a href="https://speakeasyapi.dev/?utm_source=kinopenapi+repo&utm_medium=github+sponsorship">
-		<picture>
-		  <source media="(prefers-color-scheme: light)" srcset=".github/sponsors/speakeasy-github-sponsor-light.svg">
-		  <source media="(prefers-color-scheme: dark)" srcset=".github/sponsors/speakeasy-github-sponsor-dark.svg">
-		  <img alt="Speakeasy logo" src=".github/sponsors/speakeasy-github-sponsor-dark.svg" height="100px">
-		</picture>
-	</a>
-</p>
+Please, [give back to this project](https://github.com/sponsors/fenollp) by becoming a sponsor.
 
 Here's some projects that depend on _kin-openapi_:
+  * [github.com/go-fuego/fuego](https://github.com/go-fuego/fuego) - "Framework generating OpenAPI 3 spec from source code"
+  * [github.com/a-h/rest](https://github.com/a-h/rest) - "Generate OpenAPI 3.0 specifications from Go code without annotations or magic comments"
   * [github.com/Tufin/oasdiff](https://github.com/Tufin/oasdiff) - "A diff tool for OpenAPI Specification 3"
   * [github.com/danielgtaylor/apisprout](https://github.com/danielgtaylor/apisprout) - "Lightweight, blazing fast, cross-platform OpenAPI 3 mock server with validation"
   * [github.com/deepmap/oapi-codegen](https://github.com/deepmap/oapi-codegen) - "Generate Go client and server boilerplate from OpenAPI 3 specifications"
@@ -40,6 +32,7 @@ Here's some projects that depend on _kin-openapi_:
   * (Feel free to add your project by [creating an issue](https://github.com/getkin/kin-openapi/issues/new) or a pull request)
 
 ## Alternatives
+* [libopenapi](https://github.com/pb33f/libopenapi) a fully featured, high performance OpenAPI 3.1, 3.0 and Swagger parser, library, validator and toolkit
 * [go-swagger](https://github.com/go-swagger/go-swagger) stated [*OpenAPIv3 won't be supported*](https://github.com/go-swagger/go-swagger/issues/1122#issuecomment-575968499)
 * [swaggo](https://github.com/swaggo/swag) has an [open issue on OpenAPIv3](https://github.com/swaggo/swag/issues/386)
 * [go-openapi](https://github.com/go-openapi)'s [spec3](https://github.com/go-openapi/spec3)
@@ -166,8 +159,8 @@ func main() {
 	}
 }
 
-func xmlBodyDecoder(body io.Reader, h http.Header, schema *openapi3.SchemaRef, encFn openapi3filter.EncodingFn) (decoded interface{}, err error) {
-	// Decode body to a primitive, []interface{}, or map[string]interface{}.
+func xmlBodyDecoder(body io.Reader, h http.Header, schema *openapi3.SchemaRef, encFn openapi3filter.EncodingFn) (decoded any, err error) {
+	// Decode body to a primitive, []any, or map[string]any.
 }
 ```
 
@@ -176,7 +169,7 @@ func xmlBodyDecoder(body io.Reader, h http.Header, schema *openapi3.SchemaRef, e
 By default, the library checks unique items using the following predefined function:
 
 ```go
-func isSliceOfUniqueItems(xs []interface{}) bool {
+func isSliceOfUniqueItems(xs []any) bool {
 	s := len(xs)
 	m := make(map[string]struct{}, s)
 	for _, x := range xs {
@@ -202,7 +195,7 @@ func main() {
 	// ... other validate codes
 }
 
-func arrayUniqueItemsChecker(items []interface{}) bool {
+func arrayUniqueItemsChecker(items []any) bool {
 	// Check the uniqueness of the input slice
 }
 ```
@@ -275,7 +268,50 @@ func safeErrorMessage(err *openapi3.SchemaError) string {
 
 This will change the schema validation errors to return only the `Reason` field, which is guaranteed to not include the original value.
 
+## Reconciling component $ref types
+
+`ReferencesComponentInRootDocument` is a useful helper function to check if a component reference
+coincides with a reference in the root document's component objects fixed fields.
+
+This can be used to determine if two schema definitions are of the same structure, helpful for
+code generation tools when generating go type models.
+
+```go
+doc, err = loader.LoadFromFile("openapi.yml")
+
+for _, path := range doc.Paths.InMatchingOrder() {
+	pathItem := doc.Paths.Find(path)
+
+	if pathItem.Get == nil || pathItem.Get.Responses.Status(200) {
+		continue
+	}
+
+	for _, s := range pathItem.Get.Responses.Status(200).Value.Content {
+		name, match := ReferencesComponentInRootDocument(doc, s.Schema)
+		fmt.Println(path, match, name) // /record true #/components/schemas/BookRecord
+	}
+}
+```
+
 ## CHANGELOG: Sub-v1 breaking API changes
+
+### v0.129.0
+* `openapi3.Discriminator.Mapping` and `openapi3.OAuthFlow.Scopes` fields went from a `map[string]string` to the new type `StringMap`
+
+### v0.127.0
+* Downgraded `github.com/gorilla/mux` dep from `1.8.1` to `1.8.0`.
+
+### v0.126.0
+* `openapi3.CircularReferenceError` and `openapi3.CircularReferenceCounter` are removed. `openapi3.Loader` now implements reference backtracking, so any kind of circular references should be properly resolved.
+* `InternalizeRefs` now takes a refNameResolver that has access to `openapi3.T` and more properties of the reference needing resolving.
+* The `DefaultRefNameResolver` has been updated, choosing names that will be less likely to collide with each other. Because of this internalized specs will likely change slightly.
+* `openapi3.Format` and `openapi3.FormatCallback` are removed and the type of `openapi3.SchemaStringFormats` has changed.
+
+### v0.125.0
+* The `openapi3filter.ErrFunc` and `openapi3filter.LogFunc` func types now take the validated request's context as first argument.
+
+### v0.124.0
+* `openapi3.Schema.Type` & `openapi2.Parameter.Type` fields went from a `string` to the type `*Type` with methods: `Includes`, `Is`, `Permits` & `Slice`.
 
 ### v0.122.0
 * `Paths` field of `openapi3.T` is now a pointer
@@ -295,7 +331,7 @@ This will change the schema validation errors to return only the `Reason` field,
 * The string format `email` has been removed by default. To use it please call `openapi3.DefineStringFormat("email", openapi3.FormatOfStringForEmail)`.
 * Field `openapi3.T.Components` is now a pointer.
 * Fields `openapi3.Schema.AdditionalProperties` and `openapi3.Schema.AdditionalPropertiesAllowed` are replaced by `openapi3.Schema.AdditionalProperties.Schema` and `openapi3.Schema.AdditionalProperties.Has` respectively.
-* Type `openapi3.ExtensionProps` is now just `map[string]interface{}` and extensions are accessible through the `Extensions` field.
+* Type `openapi3.ExtensionProps` is now just `map[string]any` and extensions are accessible through the `Extensions` field.
 
 ### v0.112.0
 * `(openapi3.ValidationOptions).ExamplesValidationDisabled` has been unexported.

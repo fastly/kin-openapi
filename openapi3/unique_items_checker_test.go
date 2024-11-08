@@ -11,11 +11,11 @@ import (
 func TestRegisterArrayUniqueItemsChecker(t *testing.T) {
 	var (
 		schema = openapi3.Schema{
-			Type:        "array",
+			Type:        &openapi3.Types{"array"},
 			UniqueItems: true,
 			Items:       openapi3.NewStringSchema().NewRef(),
 		}
-		val = []interface{}{"1", "2", "3"}
+		val = []any{"1", "2", "3"}
 	)
 
 	// Fist checked by predefined function
@@ -25,7 +25,7 @@ func TestRegisterArrayUniqueItemsChecker(t *testing.T) {
 	// Register a function will always return false when check if a
 	// slice has unique items, then use a slice indeed has unique
 	// items to verify that check unique items will failed.
-	openapi3.RegisterArrayUniqueItemsChecker(func(items []interface{}) bool {
+	openapi3.RegisterArrayUniqueItemsChecker(func(items []any) bool {
 		return false
 	})
 	defer openapi3.RegisterArrayUniqueItemsChecker(nil) // Reset for other tests
