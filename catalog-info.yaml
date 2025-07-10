@@ -1,0 +1,48 @@
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    github.com/project-slug: fastly/kin-openapi
+  labels: {}
+  links: []
+  name: kin-openapi
+  tags: []
+  title: Kin Openapi
+spec:
+  dependsOn: []
+  fastly:
+    compliance:
+      customerFacingIfCompromised: false
+      customerTraffic: false
+      endUserTraffic: false
+      hasSensitiveData:
+        - none
+      inScopeForAudit: false
+      internetAccessible: false
+      isAuthoritativeSource: false
+      propagatesToEdge: false
+      requiresAccessToPlatformSpecificApisForConfig: false
+      tier: tier_4
+      whereDataIsStored:
+        - not applicable
+      whereServiceIsRunning:
+        - local
+  lifecycle: pre-alpha
+  owner: group:orphanage
+  type: service
+
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  annotations:
+    github.com/project-slug: fastly/kin-openapi
+  description: OpenAPI 3.0 (and Swagger v2) implementation for Go (parsing, converting, validation, and more)
+  name: kin-openapi
+  title: fastly/kin-openapi
+spec:
+  lifecycle: source
+  owner: group:ngwaf-agent-modules
+  type: repository
