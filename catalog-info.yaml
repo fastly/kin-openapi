@@ -40,7 +40,7 @@ metadata:
   annotations:
     github.com/project-slug: fastly/kin-openapi
   description: OpenAPI 3.0 (and Swagger v2) implementation for Go (parsing, converting, validation, and more)
-  name: kin-openapi
+  name: kin-openapi-repo
   title: fastly/kin-openapi
 spec:
   lifecycle: source
