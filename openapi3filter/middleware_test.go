@@ -2,6 +2,7 @@ package openapi3filter_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -143,21 +144,21 @@ func (h *validatorTestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", h.contentType)
 	if h.errStatusCode != 0 {
 		w.WriteHeader(h.errStatusCode)
-		w.Write([]byte(h.errBody))
+		_, _ = w.Write([]byte(h.errBody))
 		return
 	}
 	if !testUrlRE.MatchString(r.URL.Path) {
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(h.errBody))
+		_, _ = w.Write([]byte(h.errBody))
 		return
 	}
 	switch r.Method {
 	case "GET":
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(h.getBody))
+		_, _ = w.Write([]byte(h.getBody))
 	case "POST":
 		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte(h.postBody))
+		_, _ = w.Write([]byte(h.postBody))
 	default:
 		http.Error(w, h.errBody, http.StatusMethodNotAllowed)
 	}
@@ -450,7 +451,7 @@ paths:
 			panic(err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		result := map[string]interface{}{"result": x * x}
+		result := map[string]any{"result": x * x}
 		if x == 42 {
 			// An easter egg. Unfortunately, the spec does not allow additional properties...
 			result["comment"] = "the answer to the ultimate question of life, the universe, and everything"
@@ -489,11 +490,11 @@ paths:
 	// testing a service against its spec in development and CI. In production,
 	// availability may be more important than strictness.
 	v := openapi3filter.NewValidator(router, openapi3filter.Strict(true),
-		openapi3filter.OnErr(func(w http.ResponseWriter, status int, code openapi3filter.ErrCode, err error) {
+		openapi3filter.OnErr(func(_ context.Context, w http.ResponseWriter, status int, code openapi3filter.ErrCode, err error) {
 			// Customize validation error responses to use JSON
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(status)
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"status":  status,
 				"message": http.StatusText(status),
 			})

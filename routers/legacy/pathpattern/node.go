@@ -10,9 +10,10 @@ package pathpattern
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -55,7 +56,7 @@ func PathFromHost(host string, specialDashes bool) string {
 
 type Node struct {
 	VariableNames []string
-	Value         interface{}
+	Value         any
 	Suffixes      SuffixList
 }
 
@@ -133,27 +134,17 @@ func (suffix Suffix) String() string {
 
 type SuffixList []Suffix
 
-func (list SuffixList) Less(i, j int) bool {
-	a, b := list[i], list[j]
-	ak, bk := a.Kind, b.Kind
-	if ak < bk {
-		return true
-	} else if bk < ak {
-		return false
+// compareSuffix compares two Suffix values for sorting purposes.
+// It compares by Kind first, then by Pattern in reverse order.
+func compareSuffix(a, b Suffix) int {
+	if c := cmp.Compare(a.Kind, b.Kind); c != 0 {
+		return c
 	}
-	return a.Pattern > b.Pattern
+	// Reverse order for Pattern
+	return cmp.Compare(b.Pattern, a.Pattern)
 }
 
-func (list SuffixList) Len() int {
-	return len(list)
-}
-
-func (list SuffixList) Swap(i, j int) {
-	a, b := list[i], list[j]
-	list[i], list[j] = b, a
-}
-
-func (currentNode *Node) MustAdd(path string, value interface{}, options *Options) {
+func (currentNode *Node) MustAdd(path string, value any, options *Options) {
 	node, err := currentNode.CreateNode(path, options)
 	if err != nil {
 		panic(err)
@@ -161,7 +152,7 @@ func (currentNode *Node) MustAdd(path string, value interface{}, options *Option
 	node.Value = value
 }
 
-func (currentNode *Node) Add(path string, value interface{}, options *Options) error {
+func (currentNode *Node) Add(path string, value any, options *Options) error {
 	node, err := currentNode.CreateNode(path, options)
 	if err != nil {
 		return err
@@ -256,7 +247,7 @@ loop:
 		newNode := &Node{}
 		suffix.Node = newNode
 		currentNode.Suffixes = append(currentNode.Suffixes, suffix)
-		sort.Sort(currentNode.Suffixes)
+		slices.SortFunc(currentNode.Suffixes, compareSuffix)
 		currentNode = newNode
 		continue loop
 	}

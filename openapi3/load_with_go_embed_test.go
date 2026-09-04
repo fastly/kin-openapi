@@ -1,5 +1,4 @@
 //go:build go1.16
-// +build go1.16
 
 package openapi3_test
 
@@ -40,5 +39,5 @@ func Example() {
 		Properties["bar"].Value.
 		Type,
 	)
-	// Output: string
+	// Output: &[string]
 }

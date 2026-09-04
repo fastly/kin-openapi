@@ -3,30 +3,38 @@ package openapi3
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"maps"
 )
 
 // Example is specified by OpenAPI/Swagger 3.0 standard.
 // See https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.0.3.md#example-object
 type Example struct {
-	Extensions map[string]interface{} `json:"-" yaml:"-"`
+	Extensions map[string]any `json:"-" yaml:"-"`
+	Origin     *Origin        `json:"-" yaml:"-"`
 
-	Summary       string      `json:"summary,omitempty" yaml:"summary,omitempty"`
-	Description   string      `json:"description,omitempty" yaml:"description,omitempty"`
-	Value         interface{} `json:"value,omitempty" yaml:"value,omitempty"`
-	ExternalValue string      `json:"externalValue,omitempty" yaml:"externalValue,omitempty"`
+	Summary       string `json:"summary,omitempty" yaml:"summary,omitempty"`
+	Description   string `json:"description,omitempty" yaml:"description,omitempty"`
+	Value         any    `json:"value,omitempty" yaml:"value,omitempty"`
+	ExternalValue string `json:"externalValue,omitempty" yaml:"externalValue,omitempty"`
 }
 
-func NewExample(value interface{}) *Example {
+func NewExample(value any) *Example {
 	return &Example{Value: value}
 }
 
 // MarshalJSON returns the JSON encoding of Example.
 func (example Example) MarshalJSON() ([]byte, error) {
-	m := make(map[string]interface{}, 4+len(example.Extensions))
-	for k, v := range example.Extensions {
-		m[k] = v
+	x, err := example.MarshalYAML()
+	if err != nil {
+		return nil, err
 	}
+	return json.Marshal(x)
+}
+
+// MarshalYAML returns the YAML encoding of Example.
+func (example Example) MarshalYAML() (any, error) {
+	m := make(map[string]any, 4+len(example.Extensions))
+	maps.Copy(m, example.Extensions)
 	if x := example.Summary; x != "" {
 		m["summary"] = x
 	}
@@ -39,7 +47,7 @@ func (example Example) MarshalJSON() ([]byte, error) {
 	if x := example.ExternalValue; x != "" {
 		m["externalValue"] = x
 	}
-	return json.Marshal(m)
+	return m, nil
 }
 
 // UnmarshalJSON sets Example to a copy of data.
@@ -66,11 +74,11 @@ func (example *Example) Validate(ctx context.Context, opts ...ValidationOption) 
 	ctx = WithValidationOptions(ctx, opts...)
 
 	if example.Value != nil && example.ExternalValue != "" {
-		return errors.New("value and externalValue are mutually exclusive")
+		return newExampleValueExternalValueExclusive(example.Origin)
 	}
 	if example.Value == nil && example.ExternalValue == "" {
-		return errors.New("no value or externalValue field")
+		return newExampleValueOrExternalValueRequired(example.Origin)
 	}
 
-	return validateExtensions(ctx, example.Extensions)
+	return validateExtensions(ctx, example.Extensions, example.Origin)
 }

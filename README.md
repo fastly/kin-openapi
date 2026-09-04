@@ -1,35 +1,28 @@
 [![CI](https://github.com/getkin/kin-openapi/workflows/go/badge.svg)](https://github.com/getkin/kin-openapi/actions)
-[![Go Report Card](https://goreportcard.com/badge/github.com/getkin/kin-openapi)](https://goreportcard.com/report/github.com/getkin/kin-openapi)
-[![GoDoc](https://godoc.org/github.com/getkin/kin-openapi?status.svg)](https://godoc.org/github.com/getkin/kin-openapi)
+[![Go Reference](https://pkg.go.dev/badge/github.com/getkin/kin-openapi.svg)](https://pkg.go.dev/github.com/getkin/kin-openapi)
 [![Join Gitter Chat Channel -](https://badges.gitter.im/getkin/kin.svg)](https://gitter.im/getkin/kin?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![inspect.software](https://raw.githubusercontent.com/inspect-software/badges/main/v1/g/getkin/kin-openapi.svg)](https://inspect.software/software/getkin/kin-openapi)
 
 # Introduction
-A [Go](https://golang.org) project for handling [OpenAPI](https://www.openapis.org/) files. We target:
+A [Go](https://go.dev) project for handling [OpenAPI](https://www.openapis.org/) files. We target:
 * [OpenAPI `v2.0`](https://github.com/OAI/OpenAPI-Specification/blob/main/versions/2.0.md) (formerly known as Swagger)
 * [OpenAPI `v3.0`](https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.0.3.md)
-* [OpenAPI `v3.1`](https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.1.0.md) Soon! [Tracking issue here.](https://github.com/getkin/kin-openapi/issues/230)
+* [OpenAPI `v3.1`](https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.1.0.md)
+* [OpenAPI `v3.2`](https://spec.openapis.org/oas/v3.2.0.html) Partially: Media Type Object `itemSchema`, Path Item Object `query` (the HTTP `QUERY` method) and `additionalOperations` (custom HTTP methods).
 
 Licensed under the [MIT License](./LICENSE).
 
 ## Contributors, users and sponsors
 The project has received pull requests [from many people](https://github.com/getkin/kin-openapi/graphs/contributors). Thanks to everyone!
 
-Be sure to [give back to this project](https://github.com/sponsors/fenollp) like our sponsors:
-
-<p align="center">
-	<a href="https://speakeasyapi.dev/?utm_source=kinopenapi+repo&utm_medium=github+sponsorship">
-		<picture>
-		  <source media="(prefers-color-scheme: light)" srcset=".github/sponsors/speakeasy-github-sponsor-light.svg">
-		  <source media="(prefers-color-scheme: dark)" srcset=".github/sponsors/speakeasy-github-sponsor-dark.svg">
-		  <img alt="Speakeasy logo" src=".github/sponsors/speakeasy-github-sponsor-dark.svg" height="100px">
-		</picture>
-	</a>
-</p>
+Please, [give back to this project](https://github.com/sponsors/fenollp) by becoming a sponsor.
 
 Here's some projects that depend on _kin-openapi_:
+  * [github.com/go-fuego/fuego](https://github.com/go-fuego/fuego) - "Framework generating OpenAPI 3 spec from source code"
+  * [github.com/a-h/rest](https://github.com/a-h/rest) - "Generate OpenAPI 3.0 specifications from Go code without annotations or magic comments"
   * [github.com/Tufin/oasdiff](https://github.com/Tufin/oasdiff) - "A diff tool for OpenAPI Specification 3"
   * [github.com/danielgtaylor/apisprout](https://github.com/danielgtaylor/apisprout) - "Lightweight, blazing fast, cross-platform OpenAPI 3 mock server with validation"
-  * [github.com/deepmap/oapi-codegen](https://github.com/deepmap/oapi-codegen) - "Generate Go client and server boilerplate from OpenAPI 3 specifications"
+  * [github.com/oapi-codegen/oapi-codegen](https://github.com/oapi-codegen/oapi-codegen) - "Generate Go client and server boilerplate from OpenAPI 3 specifications"
   * [github.com/dunglas/vulcain](https://github.com/dunglas/vulcain) - "Use HTTP/2 Server Push to create fast and idiomatic client-driven REST APIs"
   * [github.com/danielgtaylor/restish](https://github.com/danielgtaylor/restish) - "...a CLI for interacting with REST-ish HTTP APIs with some nice features built-in"
   * [github.com/goadesign/goa](https://github.com/goadesign/goa) - "Design-based APIs and microservices in Go"
@@ -40,31 +33,29 @@ Here's some projects that depend on _kin-openapi_:
   * (Feel free to add your project by [creating an issue](https://github.com/getkin/kin-openapi/issues/new) or a pull request)
 
 ## Alternatives
+* [libopenapi](https://github.com/pb33f/libopenapi) a fully featured, high performance OpenAPI 3.1, 3.0 and Swagger parser, library, validator and toolkit
 * [go-swagger](https://github.com/go-swagger/go-swagger) stated [*OpenAPIv3 won't be supported*](https://github.com/go-swagger/go-swagger/issues/1122#issuecomment-575968499)
 * [swaggo](https://github.com/swaggo/swag) has an [open issue on OpenAPIv3](https://github.com/swaggo/swag/issues/386)
-* [go-openapi](https://github.com/go-openapi)'s [spec3](https://github.com/go-openapi/spec3)
-	* an iteration on [spec](https://github.com/go-openapi/spec) (for OpenAPIv2)
-	* see [README](https://github.com/go-openapi/spec3/tree/3fab9faa9094e06ebd19ded7ea96d156c2283dca#oai-object-model---) for the missing parts
 
 Be sure to check [OpenAPI Initiative](https://github.com/OAI)'s [great tooling list](https://github.com/OAI/OpenAPI-Specification/blob/master/IMPLEMENTATIONS.md) as well as [OpenAPI.Tools](https://openapi.tools/).
 
 # Structure
-  * _openapi2_ ([godoc](https://godoc.org/github.com/getkin/kin-openapi/openapi2))
+  * _openapi2_ ([Go Reference](https://pkg.go.dev/github.com/getkin/kin-openapi/openapi2))
     * Support for OpenAPI 2 files, including serialization, deserialization, and validation.
-  * _openapi2conv_ ([godoc](https://godoc.org/github.com/getkin/kin-openapi/openapi2conv))
+  * _openapi2conv_ ([Go Reference](https://pkg.go.dev/github.com/getkin/kin-openapi/openapi2conv))
     * Converts OpenAPI 2 files into OpenAPI 3 files.
-  * _openapi3_ ([godoc](https://godoc.org/github.com/getkin/kin-openapi/openapi3))
+  * _openapi3_ ([Go Reference](https://pkg.go.dev/github.com/getkin/kin-openapi/openapi3))
     * Support for OpenAPI 3 files, including serialization, deserialization, and validation.
-  * _openapi3filter_ ([godoc](https://godoc.org/github.com/getkin/kin-openapi/openapi3filter))
+  * _openapi3filter_ ([Go Reference](https://pkg.go.dev/github.com/getkin/kin-openapi/openapi3filter))
     * Validates HTTP requests and responses
     * Provides a [gorilla/mux](https://github.com/gorilla/mux) router for OpenAPI operations
-  * _openapi3gen_ ([godoc](https://godoc.org/github.com/getkin/kin-openapi/openapi3gen))
+  * _openapi3gen_ ([Go Reference](https://pkg.go.dev/github.com/getkin/kin-openapi/openapi3gen))
     * Generates `*openapi3.Schema` values for Go types.
 
 # Some recipes
 ## Validating an OpenAPI document
 ```shell
-go run github.com/getkin/kin-openapi/cmd/validate@latest [--circular] [--defaults] [--examples] [--ext] [--patterns] -- <local YAML or JSON file>
+go run github.com/getkin/kin-openapi/cmd/validate@latest [--defaults] [--examples] [--ext] [--patterns] -- <local YAML or JSON file>
 ```
 
 ## Loading OpenAPI document
@@ -72,6 +63,42 @@ Use `openapi3.Loader`, which resolves all references:
 ```go
 loader := openapi3.NewLoader()
 doc, err := loader.LoadFromFile("my-openapi-spec.json")
+```
+
+## Tracking source locations (Origin)
+
+When `IncludeOrigin` is enabled, the loader records the file, line, and column of each element in the OpenAPI document. This is useful for tools that need to report errors or changes with precise source locations (e.g. linters, diff tools, editors).
+
+```go
+loader := openapi3.NewLoader()
+loader.IncludeOrigin = true
+doc, err := loader.LoadFromFile("my-openapi-spec.json")
+
+// Each element has an Origin field with source location info
+fmt.Println(doc.Info.Origin.Key.File)   // "my-openapi-spec.json"
+fmt.Println(doc.Info.Origin.Key.Line)   // 2
+fmt.Println(doc.Info.Origin.Key.Column) // 1
+```
+
+The `Origin` struct contains three parts:
+- **`Key`** — the location of the object itself (file, line, column).
+- **`Fields`** — locations of scalar fields within the object (e.g. `origin.Fields["description"]` gives the line of the `description` field).
+- **`Sequences`** — locations of items in sequence-valued fields. For example, `origin.Sequences["enum"]` gives the location of each item in an `enum` array. This is used for fields like `enum`, `required`, and `servers` where the individual items are scalars and don't have their own `Origin` field.
+
+Origin data is populated by an internal post-processing step after YAML decoding — it is not part of the OpenAPI spec itself. For this reason, Origin fields are excluded from serialization. If you marshal a loaded document back to JSON/YAML, origin data will not appear in the output.
+
+## Identifying validation errors by code
+
+Each validation error carries a stable, kebab-case code (e.g. `operation-responses-required`), independent of the message text, so tools can suppress specific findings, assign per-rule severities, or emit machine-readable diagnostics. The full catalog is available from `openapi3.ValidationErrorCodes()`.
+
+```go
+err := doc.Validate(ctx, openapi3.EnableMultiError())
+for _, e := range err.(openapi3.MultiError) {
+	var coded openapi3.CodedError
+	if errors.As(e, &coded) {
+		fmt.Println(coded.Code(), e) // e.g. "operation-responses-required value of responses must be an object"
+	}
+}
 ```
 
 ## Getting OpenAPI operation that matches request
@@ -137,8 +164,7 @@ func main() {
 
 ## Custom content type for body of HTTP request/response
 
-By default, the library parses a body of the HTTP request and response
-if it has one of the following content types: `"text/plain"` or `"application/json"`.
+By default, the library parses a body of the HTTP request and response of [a few content types](https://github.com/getkin/kin-openapi/blob/6da871e0e170b7637eb568c265c08bc2b5d6e7a3/openapi3filter/req_resp_decoder.go#L1264) e.g. `"text/plain"` or `"application/json"`.
 To support other content types you must register decoders for them:
 
 ```go
@@ -166,8 +192,8 @@ func main() {
 	}
 }
 
-func xmlBodyDecoder(body io.Reader, h http.Header, schema *openapi3.SchemaRef, encFn openapi3filter.EncodingFn) (decoded interface{}, err error) {
-	// Decode body to a primitive, []interface{}, or map[string]interface{}.
+func xmlBodyDecoder(body io.Reader, h http.Header, schema *openapi3.SchemaRef, encFn openapi3filter.EncodingFn) (decoded any, err error) {
+	// Decode body to a primitive, []any, or map[string]any.
 }
 ```
 
@@ -176,7 +202,7 @@ func xmlBodyDecoder(body io.Reader, h http.Header, schema *openapi3.SchemaRef, e
 By default, the library checks unique items using the following predefined function:
 
 ```go
-func isSliceOfUniqueItems(xs []interface{}) bool {
+func isSliceOfUniqueItems(xs []any) bool {
 	s := len(xs)
 	m := make(map[string]struct{}, s)
 	for _, x := range xs {
@@ -202,7 +228,7 @@ func main() {
 	// ... other validate codes
 }
 
-func arrayUniqueItemsChecker(items []interface{}) bool {
+func arrayUniqueItemsChecker(items []any) bool {
 	// Check the uniqueness of the input slice
 }
 ```
@@ -275,7 +301,85 @@ func safeErrorMessage(err *openapi3.SchemaError) string {
 
 This will change the schema validation errors to return only the `Reason` field, which is guaranteed to not include the original value.
 
+## Reconciling component $ref types
+
+`ReferencesComponentInRootDocument` is a useful helper function to check if a component reference
+coincides with a reference in the root document's component objects fixed fields.
+
+This can be used to determine if two schema definitions are of the same structure, helpful for
+code generation tools when generating go type models.
+
+```go
+doc, err = loader.LoadFromFile("openapi.yml")
+
+for _, path := range doc.Paths.InMatchingOrder() {
+	pathItem := doc.Paths.Find(path)
+
+	if pathItem.Get == nil || pathItem.Get.Responses.Status(200) {
+		continue
+	}
+
+	for _, s := range pathItem.Get.Responses.Status(200).Value.Content {
+		name, match := ReferencesComponentInRootDocument(doc, s.Schema)
+		fmt.Println(path, match, name) // /record true #/components/schemas/BookRecord
+	}
+}
+```
+
 ## CHANGELOG: Sub-v1 breaking API changes
+
+### v0.147.0
+* `(*openapi3.PathItem).SetOperation(string, *Operation)` no longer panics on unhandled HTTP methods: these are now stored in the new `openapi3.PathItem.AdditionalOperations` field (passing a nil operation deletes the entry).
+* `(*openapi3.PathItem).GetOperation(string)` and `(*openapi3.PathItem).Operations()` now also report the new `openapi3.PathItem.Query` field (the OpenAPI 3.2 HTTP `QUERY` method) and the `openapi3.PathItem.AdditionalOperations` entries. Routers and validators consequently match these methods.
+* `openapi2conv.FromV3(..)` and `openapi2conv.FromV3PathItem(..)` now return an error for operations whose HTTP method Swagger 2.0 cannot express (`QUERY`, `TRACE`, `CONNECT` and custom methods) instead of panic-ing.
+
+### v0.145.0
+* `(*openapi3.PathItem).GetOperation(string)` now returns `nil` on unhandled HTTP methods instead of panic-ing.
+* `(*openapi2.PathItem).GetOperation(string)` now returns `nil` on unhandled HTTP methods instead of panic-ing.
+
+### v0.144.0
+* `openapi3filter.ValidationHandler.AuthenticationFunc` no longer defaults to `NoopAuthenticationFunc`. Users now have to explicitly set the field and implement their own `AuthenticationFunc` or use the noop impl should they wish to.
+
+### v0.143.0
+* Removed the `openapi3.StringMap[V]` type (an internal helper for origin-aware map unmarshalling, obsolete since origin tracking moved to a separate `OriginTree` pass). `openapi3.Discriminator.Mapping` field type changed from `StringMap[MappingRef]` to `map[string]MappingRef`, and `openapi3.OAuthFlow.Scopes` from `StringMap[string]` to `map[string]string`.
+
+### v0.137.0
+* Reinstated `openapi3.*Ptr(..)` funcs for Go 1.25
+
+### v0.136.0
+* `openapi3.Schema.ExclusiveMin` and `openapi3.Schema.ExclusiveMax` fields changed from `bool` to `ExclusiveBound` (a union type holding `*bool` for OpenAPI 3.0 or `*float64` for OpenAPI 3.1).
+* `openapi3.Schema.PrefixItems` field changed from `[]*SchemaRef` to `SchemaRefs`.
+* `openapi3.Schema.UnevaluatedItems` and `openapi3.Schema.UnevaluatedProperties` fields changed from `*SchemaRef` to `BoolSchema` (a union type accepting either a boolean or a schema object).
+* Removed `openapi3.*Ptr(..)` funcs: they all can be replaced with `new(..)` since Go 1.26
+
+### v0.135.0
+* `openapi3.MediaType.Encoding` field type changed from `map[string]*Encoding` to `Encodings`
+* `openapi3.Server.Variables` field type changed from `map[string]*ServerVariable` to `ServerVariables`
+
+### v0.134.0
+* `openapi3.Location` gained `File` and `Name` fields (`string` type, replacing previous `int`-only struct layout)
+* `openapi3.Origin` gained `Sequences` field (`map[string][]Location`, extending previous `map[string]Location`-only struct)
+
+### v0.131.0
+* No longer `openapi3filter.RegisterBodyDecoder` the `openapi3filter.ZipFileBodyDecoder` by default.
+
+### v0.129.0
+* `openapi3.Discriminator.Mapping` and `openapi3.OAuthFlow.Scopes` fields went from a `map[string]string` to the new type `StringMap`
+
+### v0.127.0
+* Downgraded `github.com/gorilla/mux` dep from `1.8.1` to `1.8.0`.
+
+### v0.126.0
+* `openapi3.CircularReferenceError` and `openapi3.CircularReferenceCounter` are removed. `openapi3.Loader` now implements reference backtracking, so any kind of circular references should be properly resolved.
+* `InternalizeRefs` now takes a refNameResolver that has access to `openapi3.T` and more properties of the reference needing resolving.
+* The `DefaultRefNameResolver` has been updated, choosing names that will be less likely to collide with each other. Because of this internalized specs will likely change slightly.
+* `openapi3.Format` and `openapi3.FormatCallback` are removed and the type of `openapi3.SchemaStringFormats` has changed.
+
+### v0.125.0
+* The `openapi3filter.ErrFunc` and `openapi3filter.LogFunc` func types now take the validated request's context as first argument.
+
+### v0.124.0
+* `openapi3.Schema.Type` & `openapi2.Parameter.Type` fields went from a `string` to the type `*Type` with methods: `Includes`, `Is`, `Permits` & `Slice`.
 
 ### v0.122.0
 * `Paths` field of `openapi3.T` is now a pointer
@@ -295,7 +399,7 @@ This will change the schema validation errors to return only the `Reason` field,
 * The string format `email` has been removed by default. To use it please call `openapi3.DefineStringFormat("email", openapi3.FormatOfStringForEmail)`.
 * Field `openapi3.T.Components` is now a pointer.
 * Fields `openapi3.Schema.AdditionalProperties` and `openapi3.Schema.AdditionalPropertiesAllowed` are replaced by `openapi3.Schema.AdditionalProperties.Schema` and `openapi3.Schema.AdditionalProperties.Has` respectively.
-* Type `openapi3.ExtensionProps` is now just `map[string]interface{}` and extensions are accessible through the `Extensions` field.
+* Type `openapi3.ExtensionProps` is now just `map[string]any` and extensions are accessible through the `Extensions` field.
 
 ### v0.112.0
 * `(openapi3.ValidationOptions).ExamplesValidationDisabled` has been unexported.

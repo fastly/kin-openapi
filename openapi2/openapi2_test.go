@@ -6,7 +6,7 @@ import (
 	"os"
 	"reflect"
 
-	"github.com/invopop/yaml"
+	"github.com/oasdiff/yaml"
 
 	"github.com/getkin/kin-openapi/openapi2"
 )
@@ -42,7 +42,7 @@ func Example() {
 		panic(err)
 	}
 	var docAgainFromYAML openapi2.T
-	if err = yaml.Unmarshal(outputYAML, &docAgainFromYAML); err != nil {
+	if _, err = yaml.Unmarshal(outputYAML, &docAgainFromYAML, yaml.DecodeOpts{DisableTimestamps: true}); err != nil {
 		panic(err)
 	}
 	if !reflect.DeepEqual(doc, docAgainFromYAML) {

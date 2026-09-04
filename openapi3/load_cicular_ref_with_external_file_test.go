@@ -1,5 +1,4 @@
 //go:build go1.16
-// +build go1.16
 
 package openapi3_test
 
@@ -35,7 +34,7 @@ func TestLoadCircularRefFromFile(t *testing.T) {
 					Value: &openapi3.Schema{
 						Properties: map[string]*openapi3.SchemaRef{
 							"id": {
-								Value: &openapi3.Schema{Type: "string"}},
+								Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
 						},
 					},
 				},
@@ -47,6 +46,19 @@ func TestLoadCircularRefFromFile(t *testing.T) {
 	bar.Value.Properties["foo"] = &openapi3.SchemaRef{Ref: "#/components/schemas/Foo", Value: foo.Value}
 	foo.Value.Properties["bar"] = &openapi3.SchemaRef{Ref: "#/components/schemas/Bar", Value: bar.Value}
 
+	bazNestedRef := &openapi3.SchemaRef{Ref: "./baz.yml#/BazNested"}
+	array := openapi3.NewArraySchema()
+	array.Items = bazNestedRef
+	bazNested := &openapi3.Schema{Properties: map[string]*openapi3.SchemaRef{
+		"bazArray": {
+			Value: &openapi3.Schema{
+				Items: bazNestedRef,
+			},
+		},
+		"baz": bazNestedRef,
+	}}
+	bazNestedRef.Value = bazNested
+
 	want := &openapi3.T{
 		OpenAPI: "3.0.3",
 		Info: &openapi3.Info{
@@ -57,6 +69,7 @@ func TestLoadCircularRefFromFile(t *testing.T) {
 			Schemas: openapi3.Schemas{
 				"Foo": foo,
 				"Bar": bar,
+				"Baz": bazNestedRef,
 			},
 		},
 	}

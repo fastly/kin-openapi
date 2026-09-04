@@ -20,7 +20,7 @@ type theFieldInfo struct {
 }
 
 func appendFields(fields []theFieldInfo, parentIndex []int, t reflect.Type) []theFieldInfo {
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct {
@@ -30,7 +30,7 @@ func appendFields(fields []theFieldInfo, parentIndex []int, t reflect.Type) []th
 	// For each field
 	numField := t.NumField()
 iteration:
-	for i := 0; i < numField; i++ {
+	for i := range numField {
 		f := t.Field(i)
 		index := make([]int, 0, len(parentIndex)+1)
 		index = append(index, parentIndex...)
@@ -43,6 +43,11 @@ iteration:
 				continue
 			}
 			if jsonTag == "" {
+				fields = appendFields(fields, index, f.Type)
+				continue iteration
+			}
+			jsonName, _, _ := strings.Cut(jsonTag, ",")
+			if jsonName == "" {
 				fields = appendFields(fields, index, f.Type)
 				continue iteration
 			}
@@ -78,8 +83,9 @@ iteration:
 		// Parse the tag
 		if jsonTag != "" {
 			field.HasJSONTag = true
-			for i, part := range strings.Split(jsonTag, ",") {
-				if i == 0 {
+			first := true
+			for part := range strings.SplitSeq(jsonTag, ",") {
+				if first {
 					if part != "" {
 						field.JSONName = part
 					}
@@ -91,6 +97,7 @@ iteration:
 						field.JSONString = true
 					}
 				}
+				first = false
 			}
 		}
 
@@ -102,19 +109,4 @@ iteration:
 	}
 
 	return fields
-}
-
-type sortableFieldInfos []theFieldInfo
-
-func (list sortableFieldInfos) Len() int {
-	return len(list)
-}
-
-func (list sortableFieldInfos) Less(i, j int) bool {
-	return list[i].JSONName < list[j].JSONName
-}
-
-func (list sortableFieldInfos) Swap(i, j int) {
-	a, b := list[i], list[j]
-	list[i], list[j] = b, a
 }

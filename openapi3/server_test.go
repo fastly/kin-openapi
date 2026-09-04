@@ -1,8 +1,6 @@
 package openapi3
 
 import (
-	"context"
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -35,7 +33,7 @@ func TestServerParamValuesWithPath(t *testing.T) {
 		"http://domain0.domain1.example.com/a/b-version/c/d":          newServerMatch("/d", "domain0", "domain1", "b", "", ""),
 		"http://domain0.domain1.example.com/a/1.0.0-version/c/d":      newServerMatch("/d", "domain0", "domain1", "1.0.0", "", ""),
 	} {
-		t.Run(input, testServerParamValues(t, server, input, expected))
+		t.Run(input, testServerParamValues(server, input, expected))
 	}
 }
 
@@ -46,7 +44,7 @@ func TestServerParamValuesNoPath(t *testing.T) {
 	for input, expected := range map[string]*serverMatch{
 		"https://domain0.domain1.example.com/": newServerMatch("/", "domain0", "domain1"),
 	} {
-		t.Run(input, testServerParamValues(t, server, input, expected))
+		t.Run(input, testServerParamValues(server, input, expected))
 	}
 }
 
@@ -62,33 +60,37 @@ func invalidServer() *Server {
 
 func TestServerValidation(t *testing.T) {
 	tests := []struct {
-		name          string
-		input         *Server
-		expectedError error
+		name             string
+		input            *Server
+		expectedErrorMsg string // empty = expect no error
 	}{
 		{
 			"when no URL is provided",
 			invalidServer(),
-			errors.New("value of url must be a non-empty string"),
+			"value of url must be a non-empty string",
 		},
 		{
 			"when a URL is provided",
 			validServer(),
-			nil,
+			"",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			c := context.Background()
+			c := t.Context()
 			validationErr := test.input.Validate(c)
 
-			require.Equal(t, test.expectedError, validationErr, "expected errors (or lack of) to match")
+			if test.expectedErrorMsg == "" {
+				require.NoError(t, validationErr)
+			} else {
+				require.EqualError(t, validationErr, test.expectedErrorMsg)
+			}
 		})
 	}
 }
 
-func testServerParamValues(t *testing.T, server *Server, input string, expected *serverMatch) func(*testing.T) {
+func testServerParamValues(server *Server, input string, expected *serverMatch) func(*testing.T) {
 	return func(t *testing.T) {
 		args, remaining, ok := server.MatchRawURL(input)
 		if expected == nil {
@@ -192,7 +194,7 @@ func TestServersBasePath(t *testing.T) {
 		},
 	} {
 		t.Run(testcase.title, func(t *testing.T) {
-			err := testcase.servers.Validate(context.Background())
+			err := testcase.servers.Validate(t.Context())
 			require.NoError(t, err)
 
 			got, err := testcase.servers.BasePath()

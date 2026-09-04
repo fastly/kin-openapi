@@ -1,12 +1,14 @@
-package openapi3
+package openapi3_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
-func oneofSpec(t *testing.T) *T {
+func oneofSpec(t *testing.T) *openapi3.T {
 	t.Helper()
 
 	spec := []byte(`
@@ -59,7 +61,7 @@ components:
           dog: "#/components/schemas/Dog"
 `[1:])
 
-	loader := NewLoader()
+	loader := openapi3.NewLoader()
 	doc, err := loader.LoadFromData(spec)
 	require.NoError(t, err)
 
@@ -69,7 +71,7 @@ components:
 	return doc
 }
 
-func oneofNoDiscriminatorSpec(t *testing.T) *T {
+func oneofNoDiscriminatorSpec(t *testing.T) *openapi3.T {
 	t.Helper()
 
 	spec := []byte(`
@@ -107,7 +109,7 @@ components:
         - $ref: "#/components/schemas/Dog"
 `[1:])
 
-	loader := NewLoader()
+	loader := openapi3.NewLoader()
 	doc, err := loader.LoadFromData(spec)
 	require.NoError(t, err)
 
@@ -119,7 +121,7 @@ components:
 
 func TestVisitJSON_OneOf_MissingDescriptorProperty(t *testing.T) {
 	doc := oneofSpec(t)
-	err := doc.Components.Schemas["Animal"].Value.VisitJSON(map[string]interface{}{
+	err := doc.Components.Schemas["Animal"].Value.VisitJSON(map[string]any{
 		"name": "snoopy",
 	})
 	require.ErrorContains(t, err, `input does not contain the discriminator property "$type"`)
@@ -127,7 +129,7 @@ func TestVisitJSON_OneOf_MissingDescriptorProperty(t *testing.T) {
 
 func TestVisitJSON_OneOf_MissingDescriptorValue(t *testing.T) {
 	doc := oneofSpec(t)
-	err := doc.Components.Schemas["Animal"].Value.VisitJSON(map[string]interface{}{
+	err := doc.Components.Schemas["Animal"].Value.VisitJSON(map[string]any{
 		"name":  "snoopy",
 		"$type": "snake",
 	})
@@ -136,7 +138,7 @@ func TestVisitJSON_OneOf_MissingDescriptorValue(t *testing.T) {
 
 func TestVisitJSON_OneOf_MissingField(t *testing.T) {
 	doc := oneofSpec(t)
-	err := doc.Components.Schemas["Animal"].Value.VisitJSON(map[string]interface{}{
+	err := doc.Components.Schemas["Animal"].Value.VisitJSON(map[string]any{
 		"name":  "snoopy",
 		"$type": "dog",
 	})
@@ -145,7 +147,7 @@ func TestVisitJSON_OneOf_MissingField(t *testing.T) {
 
 func TestVisitJSON_OneOf_NoDescriptor_MissingField(t *testing.T) {
 	doc := oneofNoDiscriminatorSpec(t)
-	err := doc.Components.Schemas["Animal"].Value.VisitJSON(map[string]interface{}{
+	err := doc.Components.Schemas["Animal"].Value.VisitJSON(map[string]any{
 		"name": "snoopy",
 	})
 	require.ErrorContains(t, err, `doesn't match schema due to: Error at "/scratches": property "scratches" is missing`)
@@ -153,14 +155,14 @@ func TestVisitJSON_OneOf_NoDescriptor_MissingField(t *testing.T) {
 
 func TestVisitJSON_OneOf_BadDiscriminatorType(t *testing.T) {
 	doc := oneofSpec(t)
-	err := doc.Components.Schemas["Animal"].Value.VisitJSON(map[string]interface{}{
+	err := doc.Components.Schemas["Animal"].Value.VisitJSON(map[string]any{
 		"name":      "snoopy",
 		"scratches": true,
 		"$type":     1,
 	})
 	require.ErrorContains(t, err, `value of discriminator property "$type" is not a string`)
 
-	err = doc.Components.Schemas["Animal"].Value.VisitJSON(map[string]interface{}{
+	err = doc.Components.Schemas["Animal"].Value.VisitJSON(map[string]any{
 		"name":  "snoopy",
 		"barks": true,
 		"$type": nil,
@@ -198,25 +200,22 @@ components:
                      maxLength: 10
 `[1:])
 
-	loader := NewLoader()
+	loader := openapi3.NewLoader()
 	doc, err := loader.LoadFromData(spec)
 	require.NoError(t, err)
 
 	err = doc.Validate(loader.Context)
 	require.NoError(t, err)
 
-	err = doc.Components.Schemas["Something"].Value.VisitJSON(map[string]interface{}{
-		"first": map[string]interface{}{
-			"second": map[string]interface{}{
+	err = doc.Components.Schemas["Something"].Value.VisitJSON(map[string]any{
+		"first": map[string]any{
+			"second": map[string]any{
 				"third": "123456789",
 			},
 		},
 	})
-
 	require.ErrorContains(t, err, `Error at "/first/second/third"`)
-
-	var sErr *SchemaError
-
+	var sErr *openapi3.SchemaError
 	require.ErrorAs(t, err, &sErr)
 	require.Equal(t, []string{"first", "second", "third"}, sErr.JSONPointer())
 }

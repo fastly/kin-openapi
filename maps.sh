@@ -15,9 +15,9 @@ value_types+=('*PathItem')
 value_types+=('*PathItem')
 
 deref_vs=()
-deref_vs+=('*Response = v.Value')
-deref_vs+=('*PathItem = v')
-deref_vs+=('*PathItem = v')
+deref_vs+=('v.Value')
+deref_vs+=('v')
+deref_vs+=('v')
 
 names=()
 names+=('responses')
@@ -36,7 +36,7 @@ package openapi3
 
 import (
 	"encoding/json"
-	"sort"
+	"maps"
 	"strings"
 
 	"github.com/go-openapi/jsonpointer"
@@ -48,12 +48,14 @@ EOF
 
 test_header() {
 	cat <<EOF >"$maplike_test"
-package openapi3
+package openapi3_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 func TestMaplikeMethods(t *testing.T) {
@@ -82,8 +84,13 @@ EOF
 }
 
 
-maplike_ValueSetLenDelete() {
+maplike_KeysValueSetLenDelete() {
 	cat <<EOF >>"$maplike"
+// Keys returns the ${name} keys in a fixed order
+func (${name} ${type}) Keys() []string {
+	return componentNames(${name}.Map())
+}
+
 // Value returns the ${name} for key or nil
 func (${name} ${type}) Value(key string) ${value_type} {
 	if ${name}.Len() == 0 {
@@ -123,9 +130,7 @@ func (${name} ${type}) Map() (m map[string]${value_type}) {
 		return make(map[string]${value_type})
 	}
 	m = make(map[string]${value_type}, len(${name}.m))
-	for k, v := range ${name}.m {
-		m[k] = v
-	}
+	maps.Copy(m, ${name}.m)
 	return
 }
 
@@ -138,15 +143,14 @@ maplike_Pointable() {
 var _ jsonpointer.JSONPointable = (${type})(nil)
 
 // JSONLookup implements https://github.com/go-openapi/jsonpointer#JSONPointable
-func (${name} ${type#'*'}) JSONLookup(token string) (interface{}, error) {
+func (${name} ${type#'*'}) JSONLookup(token string) (any, error) {
 	if v := ${name}.Value(token); v == nil {
 		vv, _, err := jsonpointer.GetForToken(${name}.Extensions, token)
 		return vv, err
 	} else if ref := v.Ref; ref != "" {
 		return &Ref{Ref: ref}, nil
 	} else {
-		var vv ${deref_v}
-		return vv, nil
+		return ${deref_v}, nil
 	}
 }
 
@@ -155,38 +159,50 @@ EOF
 
 
 maplike_UnMarsh() {
+	if [[ "$type" != '*'* ]]; then
+		echo "TODO: impl non-pointer receiver YAML Marshaler"
+		exit 2
+	fi
+	local nil_condition="${name} == nil"
+	if [[ "$type" == '*Responses' ]]; then
+		nil_condition+=" || ${name}.isExplicitlyNull()"
+	fi
 	cat <<EOF >>"$maplike"
+// MarshalYAML returns the YAML encoding of ${type#'*'}.
+func (${name} ${type}) MarshalYAML() (any, error) {
+	if ${nil_condition} {
+		return nil, nil
+	}
+	m := make(map[string]any, ${name}.Len()+len(${name}.Extensions))
+	maps.Copy(m, ${name}.Extensions)
+	for _, k := range ${name}.Keys() {
+		m[k] = ${name}.m[k]
+	}
+	return m, nil
+}
+
 // MarshalJSON returns the JSON encoding of ${type#'*'}.
 func (${name} ${type}) MarshalJSON() ([]byte, error) {
-	m := make(map[string]interface{}, ${name}.Len()+len(${name}.Extensions))
-	for k, v := range ${name}.Extensions {
-		m[k] = v
+	${name}Yaml, err := ${name}.MarshalYAML()
+	if err != nil {
+		return nil, err
 	}
-	for k, v := range ${name}.Map() {
-		m[k] = v
-	}
-	return json.Marshal(m)
+	return json.Marshal(${name}Yaml)
 }
 
 // UnmarshalJSON sets ${type#'*'} to a copy of data.
 func (${name} ${type}) UnmarshalJSON(data []byte) (err error) {
-	var m map[string]interface{}
+	var m map[string]any
 	if err = json.Unmarshal(data, &m); err != nil {
 		return
 	}
 
-	ks := make([]string, 0, len(m))
-	for k := range m {
-		ks = append(ks, k)
-	}
-	sort.Strings(ks)
-
 	x := ${type#'*'}{
-		Extensions: make(map[string]interface{}),
+		Extensions: make(map[string]any),
 		m:          make(map[string]${value_type}, len(m)),
 	}
 
-	for _, k := range ks {
+	for _, k := range componentNames(m) {
 		v := m[k]
 		if strings.HasPrefix(k, "x-") {
 			x.Extensions[k] = v
@@ -254,12 +270,12 @@ for i in "${!types[@]}"; do
 	name=${names[$i]}
 
 	type="$type" name="$name" value_type="$value_type" maplike_NewWithCapa
-	type="$type" name="$name" value_type="$value_type" maplike_ValueSetLenDelete
+	type="$type" name="$name" value_type="$value_type" maplike_KeysValueSetLenDelete
 	type="$type" name="$name"    deref_v="$deref_v"    maplike_Pointable
 	type="$type" name="$name" value_type="$value_type" maplike_UnMarsh
 	[[ $((i+1)) != "${#types[@]}" ]] && echo >>"$maplike"
 
-	type="$type" value_type="$value_type" test_body
+	type="${type/'*'/*openapi3.}" value_type="${value_type/'*'/*openapi3.}" test_body
 
 
 done

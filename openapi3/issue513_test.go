@@ -1,14 +1,18 @@
-package openapi3
+package openapi3_test
 
 import (
 	"encoding/json"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 func TestExtraSiblingsInRemoteRef(t *testing.T) {
-	spec := []byte(`
+	spec := `
 openapi: 3.0.1
 servers:
 - url: http://localhost:5000
@@ -31,45 +35,57 @@ paths:
             application/json:
               schema:
                 $ref: http://schemas.sentex.io/store/categories.json
-`[1:])
+`
 
-	// When that site fails to respond:
-	// see https://github.com/getkin/kin-openapi/issues/495
+	resolver := func(loader *openapi3.Loader, url *url.URL) (data []byte, err error) {
+		switch url.String() {
+		case "http://schemas.sentex.io/store/categories.json":
+			data = []byte(`
+			{
+			  "$id": "http://schemas.sentex.io/store/categories.json",
+			  "$schema": "http://json-schema.org/draft-07/schema#",
+			  "description": "array of category strings",
+			  "type": "array",
+			  "items": {
+			    "allOf": [
+			      {
+			        "$ref": "http://schemas.sentex.io/store/category.json"
+			      }
+			    ]
+			  }
+			}`)
 
-	// http://schemas.sentex.io/store/categories.json
-	// {
-	//   "$id": "http://schemas.sentex.io/store/categories.json",
-	//   "$schema": "http://json-schema.org/draft-07/schema#",
-	//   "description": "array of category strings",
-	//   "type": "array",
-	//   "items": {
-	//     "allOf": [
-	//       {
-	//         "$ref": "http://schemas.sentex.io/store/category.json"
-	//       }
-	//     ]
-	//   }
-	// }
+		case "http://schemas.sentex.io/store/category.json":
+			data = []byte(`
+			{
+			  "$id": "http://schemas.sentex.io/store/category.json",
+			  "$schema": "http://json-schema.org/draft-07/schema#",
+			  "description": "category name for products",
+			  "type": "string",
+			  "pattern": "^[A-Za-z0-9\\-]+$",
+			  "minimum": 1,
+			  "maximum": 30
+			}`)
 
-	// http://schemas.sentex.io/store/category.json
-	// {
-	//   "$id": "http://schemas.sentex.io/store/category.json",
-	//   "$schema": "http://json-schema.org/draft-07/schema#",
-	//   "description": "category name for products",
-	//   "type": "string",
-	//   "pattern": "^[A-Za-z0-9\\-]+$",
-	//   "minimum": 1,
-	//   "maximum": 30
-	// }
+		default:
+			panic(url)
+		}
+		return
+	}
 
-	sl := NewLoader()
-	sl.IsExternalRefsAllowed = true
+	for _, majmin := range []string{"'3.0'", "'3.1'", "'3.2'"} {
+		t.Run(majmin, func(t *testing.T) {
+			t.Parallel()
+			sl := openapi3.NewLoader()
+			sl.ReadFromURIFunc = resolver
 
-	doc, err := sl.LoadFromData(spec)
-	require.NoError(t, err)
+			doc, err := sl.LoadFromData([]byte(strings.ReplaceAll(spec, "3.0.1", majmin)))
+			require.NoError(t, err)
 
-	err = doc.Validate(sl.Context, AllowExtraSiblingFields("$id", "$schema"))
-	require.NoError(t, err)
+			err = doc.Validate(sl.Context, openapi3.AllowExtraSiblingFields("$id", "$schema"))
+			require.NoError(t, err)
+		})
+	}
 }
 
 func TestIssue513OKWithExtension(t *testing.T) {
@@ -104,14 +120,20 @@ components:
           description: A detailed message describing the error.
           type: string
 `[1:]
-	sl := NewLoader()
-	doc, err := sl.LoadFromData([]byte(spec))
-	require.NoError(t, err)
-	err = doc.Validate(sl.Context)
-	require.NoError(t, err)
-	data, err := json.Marshal(doc)
-	require.NoError(t, err)
-	require.Contains(t, string(data), `x-my-extension`)
+
+	for _, majmin := range []string{"3.0", "3.1"} {
+		t.Run(majmin, func(t *testing.T) {
+			t.Parallel()
+			sl := openapi3.NewLoader()
+			doc, err := sl.LoadFromData([]byte(strings.ReplaceAll(spec, "3.0.3", majmin)))
+			require.NoError(t, err)
+			err = doc.Validate(sl.Context)
+			require.NoError(t, err)
+			data, err := json.Marshal(doc)
+			require.NoError(t, err)
+			require.Contains(t, string(data), `x-my-extension`)
+		})
+	}
 }
 
 func TestIssue513KOHasExtraFieldSchema(t *testing.T) {
@@ -149,15 +171,21 @@ components:
           description: A detailed message describing the error.
           type: string
 `[1:]
-	sl := NewLoader()
-	doc, err := sl.LoadFromData([]byte(spec))
-	require.NoError(t, err)
-	require.Contains(t, doc.Paths.Value("/v1/operation").Delete.Responses.Default().Value.Extensions, `x-my-extension`)
-	err = doc.Validate(sl.Context)
-	require.ErrorContains(t, err, `extra sibling fields: [schema]`)
+
+	for _, majmin := range []string{"3.0", "3.1"} {
+		t.Run(majmin, func(t *testing.T) {
+			t.Parallel()
+			sl := openapi3.NewLoader()
+			doc, err := sl.LoadFromData([]byte(strings.ReplaceAll(spec, "3.0.3", majmin)))
+			require.NoError(t, err)
+			require.Contains(t, doc.Paths.Value("/v1/operation").Delete.Responses.Default().Value.Extensions, `x-my-extension`)
+			err = doc.Validate(sl.Context)
+			require.ErrorContains(t, err, `extra sibling fields: [schema]`)
+		})
+	}
 }
 
-func TestIssue513KOMixesRefAlongWithOtherFieldsDisallowed(t *testing.T) {
+func TestIssue513ReferenceDescriptionIsVersionAware(t *testing.T) {
 	spec := `
 openapi: "3.0.3"
 info:
@@ -171,7 +199,7 @@ paths:
       summary: Delete something
       responses:
         200:
-          description: A sibling field that the spec says is ignored
+          description: Reference description
           $ref: '#/components/responses/SomeResponseBody'
 components:
   responses:
@@ -190,11 +218,26 @@ components:
           description: A detailed message describing the error.
           type: string
 `[1:]
-	sl := NewLoader()
-	doc, err := sl.LoadFromData([]byte(spec))
-	require.NoError(t, err)
-	err = doc.Validate(sl.Context)
-	require.ErrorContains(t, err, `extra sibling fields: [description]`)
+
+	for _, majmin := range []string{"3.0", "3.1"} {
+		t.Run(majmin, func(t *testing.T) {
+			t.Parallel()
+			sl := openapi3.NewLoader()
+			doc, err := sl.LoadFromData([]byte(strings.ReplaceAll(spec, "3.0.3", majmin)))
+			require.NoError(t, err)
+			err = doc.Validate(sl.Context)
+			if majmin == "3.0" {
+				require.ErrorContains(t, err, `extra sibling fields: [description]`)
+				return
+			}
+			require.NoError(t, err)
+
+			response := doc.Paths.Value("/v1/operation").Delete.Responses.Status(200)
+			require.NotNil(t, response.Value)
+			require.NotNil(t, response.Value.Description)
+			require.Equal(t, "Reference description", *response.Value.Description)
+		})
+	}
 }
 
 func TestIssue513KOMixesRefAlongWithOtherFieldsAllowed(t *testing.T) {
@@ -230,9 +273,15 @@ components:
           description: A detailed message describing the error.
           type: string
 `[1:]
-	sl := NewLoader()
-	doc, err := sl.LoadFromData([]byte(spec))
-	require.NoError(t, err)
-	err = doc.Validate(sl.Context, AllowExtraSiblingFields("description"))
-	require.NoError(t, err)
+
+	for _, majmin := range []string{"3.0", "3.1"} {
+		t.Run(majmin, func(t *testing.T) {
+			t.Parallel()
+			sl := openapi3.NewLoader()
+			doc, err := sl.LoadFromData([]byte(strings.ReplaceAll(spec, "3.0.3", majmin)))
+			require.NoError(t, err)
+			err = doc.Validate(sl.Context, openapi3.AllowExtraSiblingFields("description"))
+			require.NoError(t, err)
+		})
+	}
 }

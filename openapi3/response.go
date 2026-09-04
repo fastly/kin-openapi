@@ -3,30 +3,33 @@ package openapi3
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"sort"
+	"maps"
 	"strconv"
 )
 
 // Responses is specified by OpenAPI/Swagger 3.0 standard.
 // See https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.0.3.md#responses-object
 type Responses struct {
-	Extensions map[string]interface{} `json:"-" yaml:"-"`
+	Extensions map[string]any `json:"-" yaml:"-"`
+	Origin     *Origin        `json:"-" yaml:"-"`
 
 	m map[string]*ResponseRef
+
+	explicitlyNull bool
 }
 
 // NewResponses builds a responses object with response objects in insertion order.
-// Given no arguments, NewResponses returns a valid responses object containing a default match-all reponse.
+// Given no arguments, NewResponses returns an empty responses object.
 func NewResponses(opts ...NewResponsesOption) *Responses {
-	if len(opts) == 0 {
-		return NewResponses(WithName("default", NewResponse().WithDescription("")))
-	}
 	responses := NewResponsesWithCapacity(len(opts))
 	for _, opt := range opts {
 		opt(responses)
 	}
 	return responses
+}
+
+func (responses *Responses) isExplicitlyNull() bool {
+	return responses != nil && responses.explicitlyNull && responses.m == nil && len(responses.Extensions) == 0
 }
 
 // NewResponsesOption describes options to NewResponses func
@@ -78,30 +81,31 @@ func (responses *Responses) Status(status int) *ResponseRef {
 // Validate returns an error if Responses does not comply with the OpenAPI spec.
 func (responses *Responses) Validate(ctx context.Context, opts ...ValidationOption) error {
 	ctx = WithValidationOptions(ctx, opts...)
+	me := newErrCollector(ctx)
 
 	if responses.Len() == 0 {
-		return errors.New("the responses object MUST contain at least one response code")
+		if err := me.emit(newResponsesNonEmptyRequired(responses.Origin)); err != nil {
+			return err
+		}
+		// Fall through so validateExtensions still runs and any extension
+		// errors aggregate with the empty-responses finding under multi mode.
 	}
 
-	keys := make([]string, 0, responses.Len())
-	for key := range responses.Map() {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
+	for _, key := range responses.Keys() {
 		v := responses.Value(key)
-		if err := v.Validate(ctx); err != nil {
+		if err := me.emit(v.Validate(ctx)); err != nil {
 			return err
 		}
 	}
 
-	return validateExtensions(ctx, responses.Extensions)
+	return me.finalize(validateExtensions(ctx, responses.Extensions, responses.Origin))
 }
 
 // Response is specified by OpenAPI/Swagger 3.0 standard.
 // See https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.0.3.md#response-object
 type Response struct {
-	Extensions map[string]interface{} `json:"-" yaml:"-"`
+	Extensions map[string]any `json:"-" yaml:"-"`
+	Origin     *Origin        `json:"-" yaml:"-"`
 
 	Description *string `json:"description,omitempty" yaml:"description,omitempty"`
 	Headers     Headers `json:"headers,omitempty" yaml:"headers,omitempty"`
@@ -135,10 +139,17 @@ func (response *Response) WithJSONSchemaRef(schema *SchemaRef) *Response {
 
 // MarshalJSON returns the JSON encoding of Response.
 func (response Response) MarshalJSON() ([]byte, error) {
-	m := make(map[string]interface{}, 4+len(response.Extensions))
-	for k, v := range response.Extensions {
-		m[k] = v
+	x, err := response.MarshalYAML()
+	if err != nil {
+		return nil, err
 	}
+	return json.Marshal(x)
+}
+
+// MarshalYAML returns the YAML encoding of Response.
+func (response Response) MarshalYAML() (any, error) {
+	m := make(map[string]any, 4+len(response.Extensions))
+	maps.Copy(m, response.Extensions)
 	if x := response.Description; x != nil {
 		m["description"] = x
 	}
@@ -151,7 +162,7 @@ func (response Response) MarshalJSON() ([]byte, error) {
 	if x := response.Links; len(x) != 0 {
 		m["links"] = x
 	}
-	return json.Marshal(m)
+	return m, nil
 }
 
 // UnmarshalJSON sets Response to a copy of data.
@@ -178,7 +189,7 @@ func (response *Response) Validate(ctx context.Context, opts ...ValidationOption
 	ctx = WithValidationOptions(ctx, opts...)
 
 	if response.Description == nil {
-		return errors.New("a short description of the response is required")
+		return newResponseDescriptionRequired(response.Origin)
 	}
 	if vo := getValidationOptions(ctx); !vo.examplesValidationDisabled {
 		vo.examplesValidationAsReq, vo.examplesValidationAsRes = false, true
@@ -190,29 +201,19 @@ func (response *Response) Validate(ctx context.Context, opts ...ValidationOption
 		}
 	}
 
-	headers := make([]string, 0, len(response.Headers))
-	for name := range response.Headers {
-		headers = append(headers, name)
-	}
-	sort.Strings(headers)
-	for _, name := range headers {
+	for _, name := range componentNames(response.Headers) {
 		header := response.Headers[name]
 		if err := header.Validate(ctx); err != nil {
 			return err
 		}
 	}
 
-	links := make([]string, 0, len(response.Links))
-	for name := range response.Links {
-		links = append(links, name)
-	}
-	sort.Strings(links)
-	for _, name := range links {
+	for _, name := range componentNames(response.Links) {
 		link := response.Links[name]
 		if err := link.Validate(ctx); err != nil {
 			return err
 		}
 	}
 
-	return validateExtensions(ctx, response.Extensions)
+	return validateExtensions(ctx, response.Extensions, response.Origin)
 }

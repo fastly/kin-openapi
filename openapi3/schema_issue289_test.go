@@ -1,9 +1,11 @@
-package openapi3
+package openapi3_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 func TestIssue289(t *testing.T) {
@@ -34,16 +36,16 @@ info:
 paths: {}
 `[1:])
 
-	loader := NewLoader()
+	loader := openapi3.NewLoader()
 	doc, err := loader.LoadFromData(spec)
 	require.NoError(t, err)
 
 	err = doc.Validate(loader.Context)
 	require.NoError(t, err)
 
-	err = doc.Components.Schemas["Server"].Value.VisitJSON(map[string]interface{}{
+	err = doc.Components.Schemas["Server"].Value.VisitJSON(map[string]any{
 		"name":    "kin-openapi",
 		"address": "127.0.0.1",
 	})
-	require.ErrorIs(t, err, ErrOneOfConflict)
+	require.ErrorIs(t, err, openapi3.ErrOneOfConflict)
 }

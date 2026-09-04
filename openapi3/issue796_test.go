@@ -1,18 +1,15 @@
-package openapi3
+package openapi3_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 func TestIssue796(t *testing.T) {
-	var old int
-	// Need to set CircularReferenceCounter to > 10
-	old, CircularReferenceCounter = CircularReferenceCounter, 20
-	defer func() { CircularReferenceCounter = old }()
-
-	loader := NewLoader()
+	loader := openapi3.NewLoader()
 	doc, err := loader.LoadFromFile("testdata/issue796.yml")
 	require.NoError(t, err)
 

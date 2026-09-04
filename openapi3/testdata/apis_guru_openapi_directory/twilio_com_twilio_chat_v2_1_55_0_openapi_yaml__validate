@@ -1,0 +1,1 @@
+invalid components: schema "chat.v2.credential": extra sibling fields: [description nullable type]

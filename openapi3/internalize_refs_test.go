@@ -1,16 +1,17 @@
-package openapi3
+package openapi3_test
 
 import (
-	"context"
 	"os"
 	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 func TestInternalizeRefs(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	regexpRef := regexp.MustCompile(`"\$ref":`)
 	regexpRefInternal := regexp.MustCompile(`"\$ref":"#`)
@@ -23,12 +24,18 @@ func TestInternalizeRefs(t *testing.T) {
 		{"testdata/spec.yaml"},
 		{"testdata/callbacks.yml"},
 		{"testdata/issue831/testref.internalizepath.openapi.yml"},
+		{"testdata/issue959/openapi.yml"},
+		{"testdata/interalizationNameCollision/api.yml"},
+		{"testdata/discriminator.yml"},
+		{"testdata/discriminatorLocalMapping.yml"},
+		{"testdata/issue1205/openapi.yml"},
+		{"testdata/issue1205/mutual.yml"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.filename, func(t *testing.T) {
 			// Load in the reference spec from the testdata
-			sl := NewLoader()
+			sl := openapi3.NewLoader()
 			sl.IsExternalRefsAllowed = true
 			doc, err := sl.LoadFromFile(test.filename)
 			require.NoError(t, err, "loading test file")

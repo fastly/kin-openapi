@@ -1,13 +1,13 @@
-package openapi2conv
+package openapi2conv_test
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/getkin/kin-openapi/openapi2"
+	"github.com/getkin/kin-openapi/openapi2conv"
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
@@ -20,11 +20,11 @@ func TestConvOpenAPIV3ToV2(t *testing.T) {
 		sl := openapi3.NewLoader()
 		err = sl.ResolveRefsIn(&doc3, nil)
 		require.NoError(t, err)
-		err = doc3.Validate(context.Background())
+		err = doc3.Validate(t.Context())
 		require.NoError(t, err)
 	}
 
-	doc2, err := FromV3(&doc3)
+	doc2, err := openapi2conv.FromV3(&doc3)
 	require.NoError(t, err)
 	data, err := json.Marshal(doc2)
 	require.NoError(t, err)
@@ -40,11 +40,11 @@ func TestConvOpenAPIV3ToV2WithReqBody(t *testing.T) {
 		sl := openapi3.NewLoader()
 		err = sl.ResolveRefsIn(&doc3, nil)
 		require.NoError(t, err)
-		err = doc3.Validate(context.Background())
+		err = doc3.Validate(t.Context())
 		require.NoError(t, err)
 	}
 
-	doc2, err := FromV3(&doc3)
+	doc2, err := openapi2conv.FromV3(&doc3)
 	require.NoError(t, err)
 	data, err := json.Marshal(doc2)
 	require.NoError(t, err)
@@ -56,13 +56,222 @@ func TestConvOpenAPIV2ToV3(t *testing.T) {
 	err := json.Unmarshal([]byte(exampleV2), &doc2)
 	require.NoError(t, err)
 
-	doc3, err := ToV3(&doc2)
+	doc3, err := openapi2conv.ToV3(&doc2)
 	require.NoError(t, err)
-	err = doc3.Validate(context.Background())
+	err = doc3.Validate(t.Context())
 	require.NoError(t, err)
 	data, err := json.Marshal(doc3)
 	require.NoError(t, err)
 	require.JSONEq(t, exampleV3, string(data))
+}
+
+func TestConvOpenAPIV2ToV3WithAdditionalPropertiesSchemaRef(t *testing.T) {
+	v2 := []byte(`
+{
+    "basePath": "/v2",
+    "host": "test.example.com",
+    "info": {
+        "title": "MyAPI",
+        "version": "0.1"
+    },
+    "paths": {
+        "/foo": {
+            "get": {
+                "operationId": "getFoo",
+                "produces": [
+                    "application/json"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "returns all information",
+                        "schema":{
+                            "type":"object",
+                            "additionalProperties":{
+                               "$ref":"#/definitions/Foo"
+                            }
+                        }
+                    }
+                },
+                "summary": "get foo"
+            }
+        }
+    },
+	"definitions": {
+	    "Foo": {
+		    "type": "object",
+			"properties": {
+			    "a": {
+				    "type": "string"
+				}
+			}
+		}
+	},
+    "schemes": [
+        "http"
+    ],
+    "swagger": "2.0"
+}
+`)
+
+	var doc2 openapi2.T
+	err := json.Unmarshal(v2, &doc2)
+	require.NoError(t, err)
+
+	doc3, err := openapi2conv.ToV3(&doc2)
+	require.NoError(t, err)
+	err = doc3.Validate(t.Context())
+	require.NoError(t, err)
+
+	responseSchema := doc3.Paths.Value("/foo").Get.Responses.Value("200").Value.Content.Get("application/json").Schema.Value
+	require.Equal(t, &openapi3.Types{"object"}, responseSchema.Type)
+	require.Equal(t, "#/components/schemas/Foo", responseSchema.AdditionalProperties.Schema.Ref)
+}
+
+func TestConvOpenAPIV2ToV3WithNestedAdditionalPropertiesSchemaRef(t *testing.T) {
+	v2 := []byte(`
+{
+    "basePath": "/v2",
+    "host": "test.example.com",
+    "info": {
+        "title": "MyAPI",
+        "version": "0.1"
+    },
+    "paths": {
+        "/foo": {
+            "get": {
+                "operationId": "getFoo",
+                "produces": [
+                    "application/json"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "returns all information",
+                        "schema":{
+                            "type":"object",
+                            "additionalProperties":{
+                               "type":"object",
+                               "additionalProperties":{
+                                   "$ref":"#/definitions/Foo"
+                               }
+                            }
+                        }
+                    }
+                },
+                "summary": "get foo"
+            }
+        }
+    },
+	"definitions": {
+	    "Foo": {
+		    "type": "object",
+			"properties": {
+			    "a": {
+				    "type": "string"
+				}
+			}
+		}
+	},
+    "schemes": [
+        "http"
+    ],
+    "swagger": "2.0"
+}
+`)
+
+	var doc2 openapi2.T
+	err := json.Unmarshal(v2, &doc2)
+	require.NoError(t, err)
+
+	doc3, err := openapi2conv.ToV3(&doc2)
+	require.NoError(t, err)
+	err = doc3.Validate(t.Context())
+	require.NoError(t, err)
+
+	responseSchema := doc3.Paths.Value("/foo").Get.Responses.Value("200").Value.Content.Get("application/json").Schema.Value
+	require.Equal(t, &openapi3.Types{"object"}, responseSchema.Type)
+	require.Equal(t, &openapi3.Types{"object"}, responseSchema.AdditionalProperties.Schema.Value.Type)
+	require.Equal(t, "#/components/schemas/Foo", responseSchema.AdditionalProperties.Schema.Value.AdditionalProperties.Schema.Ref)
+}
+
+func TestConvOpenAPIV2ToV3WithAllOfInsideAdditionalProperties(t *testing.T) {
+	v2 := []byte(`
+{
+	"basePath": "/v2",
+    "host": "test.example.com",
+    "info": {
+        "title": "MyAPI",
+        "version": "0.1"
+    },
+    "paths": {
+        "/v1/objStatus": {
+            "get": {
+				"produces": [
+                    "application/json"
+                ],
+                "responses": {
+                    "200": {
+                        "schema": {
+							"type": "object",
+							"properties": {
+								"result": {
+									"type": "object",
+									"additionalProperties": {
+										"type": "object",
+										"allOf": [
+											{
+												"$ref": "#/definitions/ObjectInfo"
+											}
+										],
+										"additionalProperties": {
+											"allOf": [
+												{
+													"$ref": "#/definitions/ObjectInfo"
+												}
+											]
+										}
+									}
+								}
+							}
+						},
+                        "description": "Success"
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "ObjectInfo": {
+            "type": "object",
+            "properties": {
+                "object_id": {
+                    "type": "string",
+                    "format": "uuid"
+                }
+            }
+        }
+    },
+	"schemes": [
+        "http"
+    ],
+    "swagger": "2.0"
+}
+`)
+
+	var doc2 openapi2.T
+	err := json.Unmarshal(v2, &doc2)
+	require.NoError(t, err)
+
+	doc3, err := openapi2conv.ToV3(&doc2)
+	require.NoError(t, err)
+	err = doc3.Validate(t.Context())
+	require.NoError(t, err)
+
+	responseSchema := doc3.Paths.Value("/v1/objStatus").Get.Responses.Value("200").Value.Content.Get("application/json").Schema.Value
+	require.Equal(t, &openapi3.Types{"object"}, responseSchema.Type)
+	resultSchema := responseSchema.Properties["result"].Value
+	require.Equal(t, &openapi3.Types{"object"}, resultSchema.Type)
+	require.Equal(t, "#/components/schemas/ObjectInfo", resultSchema.AdditionalProperties.Schema.Value.AllOf[0].Ref)
+	require.Equal(t, "#/components/schemas/ObjectInfo", resultSchema.AdditionalProperties.Schema.Value.AdditionalProperties.Schema.Value.AllOf[0].Ref)
 }
 
 const exampleV2 = `

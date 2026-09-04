@@ -6,13 +6,14 @@ on:
 jobs:
   build-and-test:
     env:
+      APISGURU_COMMIT: f7207cf0a5c56081d275ebae4cf615249323385d
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GO111MODULE: 'on'
       CGO_ENABLED: '0'
     strategy:
       fail-fast: true
       matrix:
-        go: ['1.x']
+        go: ['1.26']
         os:
         - ubuntu-latest
         - windows-latest
@@ -24,35 +25,24 @@ jobs:
     name: ${{ matrix.go }} on ${{ matrix.os }}
     steps:
 
-    - uses: actions/setup-go@v2
+    - uses: actions/setup-go@v6
       with:
         go-version: ${{ matrix.go }}
 
-    - id: go-cache-paths
-      run: |
-        echo "::set-output name=go-build::$(go env GOCACHE)"
-        echo "::set-output name=go-mod::$(go env GOMODCACHE)"
-    - run: echo ${{ steps.go-cache-paths.outputs.go-build }}
-    - run: echo ${{ steps.go-cache-paths.outputs.go-mod }}
-
-    - name: Go Build Cache
+    - name: Test suite fixtures cache
       uses: actions/cache@v3
       with:
-        path: ${{ steps.go-cache-paths.outputs.go-build }}
-        key: ${{ runner.os }}-go-${{ matrix.go }}-build-${{ hashFiles('**/go.sum') }}
-
-    - name: Go Mod Cache (go>=1.15)
-      uses: actions/cache@v3
-      with:
-        path: ${{ steps.go-cache-paths.outputs.go-mod }}
-        key: ${{ runner.os }}-go-${{ matrix.go }}-mod-${{ hashFiles('**/go.sum') }}
+        path: |
+          openapi2/testdata/APIs-guru-openapi-directory-*
+          openapi3/testdata/APIs-guru-openapi-directory-*
+        key: suite-\${{ env.APISGURU_COMMIT }}
 
     - if: runner.os == 'Linux'
       run: sudo apt install silversearcher-ag
 
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v6
 
-    - run: ./refs.sh | tee openapi3/refs.go
+    - run: go generate ./...
     - run: git --no-pager diff --exit-code
 
     - run: ./maps.sh
@@ -66,16 +56,18 @@ jobs:
     - run: go vet ./...
     - run: git --no-pager diff --exit-code
 
+    - run: go run golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@latest -test -diff -fix -omitzero=false ./...
+
     - run: go fmt ./...
     - run: git --no-pager diff --exit-code
 
     - run: go test ./...
     - if: runner.os == 'Linux'
-      run: go test -count=10 ./...
+      run: go test -count=10 -short ./...
       env:
         GOARCH: '386'
-    - run: go test -count=10 ./...
-    - run: go test -count=2 -covermode=atomic ./...
+    - run: go test -count=10 -short ./...
+    - run: go test -count=2 -short -covermode=atomic ./...
     - run: go test -v -count=10 -run TestRaceyPatternSchemaValidateHindersIt -race ./...
       env:
         CGO_ENABLED: '1'
@@ -109,12 +101,12 @@ jobs:
     - if: runner.os == 'Linux'
       name: Check for superfluous trailing whitespace
       run: |
-        ! grep -IErn '\s$' --exclude-dir={.git,target,pgdata}
+        ! git grep -IErn '\s$'
 
     - if: runner.os == 'Linux'
       name: Ensure use of unmarshal
       run: |
-        [[ "$(git grep -F yaml. -- openapi3/ | grep -v _test.go | wc -l)" = 1 ]]
+        [[ "$(git grep -F yaml. -- openapi3/ | grep -v _test.go | grep -v origin.go | wc -l)" = 2 ]]
 
     - if: runner.os == 'Linux'
       name: Use `loader := NewLoader(); loader.Load ...`
@@ -138,7 +130,7 @@ jobs:
     - if: runner.os == 'Linux'
       name: Missing specification object link to definition
       run: |
-        [[ 31 -eq $(git grep -InE '^// See https:.+OpenAPI-Specification.+3[.]0[.]3[.]md#.+bject$' openapi3/*.go | grep -v _test.go | grep -v doc.go | wc -l) ]]
+        [[ 31 -eq $(git grep -InE '^// See https:.+OpenAPI-Specification.+3[0-9.]+md#.+bject$' openapi3/*.go | grep -v _test.go | grep -v doc.go | wc -l) ]]
 
     - if: runner.os == 'Linux'
       name: Missing validation of unknown fields in extensions
@@ -203,11 +195,11 @@ jobs:
   check-goimports:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions/setup-go@v3
+    - uses: actions/checkout@v6
+    - uses: actions/setup-go@v6
       with:
-        go-version: '>=1.17.0'
-    - run: go install github.com/incu6us/goimports-reviser/v2@latest
+        go-version: '1.26'
+    - run: go install github.com/incu6us/goimports-reviser/v3@latest
     - run: which goimports-reviser
-    - run: find . -type f -iname '*.go' ! -iname '*.pb.go' -exec goimports-reviser -file-path {} \;
+    - run: find . -type f -iname '*.go' ! -iname '*.pb.go' -exec goimports-reviser {} \;
     - run: git --no-pager diff --exit-code

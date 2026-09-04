@@ -171,7 +171,130 @@ paths:
 
 	example := doc.Paths.Value("/").Get.Responses.Status(200).Value.Content.Get("application/json").Examples["test"]
 	require.NotNil(t, example.Value)
-	require.Equal(t, example.Value.Value.(map[string]interface{})["error"].(bool), false)
+	require.Equal(t, example.Value.Value.(map[string]any)["error"].(bool), false)
+}
+
+func TestReferenceObjectMetadataIsVersionAware(t *testing.T) {
+	const spec = `
+openapi: VERSION
+info: {title: Test, version: "1"}
+paths: {}
+components:
+  examples:
+    Base:
+      summary: component summary
+      description: component description
+      value: example
+    Alias:
+      $ref: "#/components/examples/Base"
+      summary: reference summary
+      description: reference description
+  headers:
+    Base:
+      description: component description
+    Alias:
+      $ref: "#/components/headers/Base"
+      description: reference description
+  parameters:
+    Base:
+      name: id
+      in: query
+      description: component description
+    Alias:
+      $ref: "#/components/parameters/Base"
+      description: reference description
+  requestBodies:
+    Base:
+      description: component description
+      content: {}
+    Alias:
+      $ref: "#/components/requestBodies/Base"
+      description: reference description
+  responses:
+    Base:
+      description: component description
+      links:
+        Alias:
+          $ref: "#/components/links/Base"
+          description: reference description
+    Alias:
+      $ref: "#/components/responses/Base"
+      description: reference description
+  links:
+    Base:
+      operationId: test
+      description: component description
+  securitySchemes:
+    Base:
+      type: apiKey
+      name: X-API-Key
+      in: header
+      description: component description
+    Alias:
+      $ref: "#/components/securitySchemes/Base"
+      description: reference description
+`
+
+	for _, test := range []struct {
+		name            string
+		version         string
+		wantSummary     string
+		wantDescription string
+	}{
+		{
+			name:            "OpenAPI 3.0 does not apply reference metadata",
+			version:         "3.0.3",
+			wantSummary:     "component summary",
+			wantDescription: "component description",
+		},
+		{
+			name:            "OpenAPI 3.1 applies reference metadata",
+			version:         "3.1.0",
+			wantSummary:     "reference summary",
+			wantDescription: "reference description",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			loader := NewLoader()
+			doc, err := loader.LoadFromData([]byte(strings.Replace(spec, "VERSION", test.version, 1)))
+			require.NoError(t, err)
+
+			require.Equal(t, test.wantSummary, doc.Components.Examples["Alias"].Value.Summary)
+			descriptions := map[string]string{
+				"example":         doc.Components.Examples["Alias"].Value.Description,
+				"header":          doc.Components.Headers["Alias"].Value.Description,
+				"parameter":       doc.Components.Parameters["Alias"].Value.Description,
+				"request body":    doc.Components.RequestBodies["Alias"].Value.Description,
+				"response":        *doc.Components.Responses["Alias"].Value.Description,
+				"link":            doc.Components.Responses["Base"].Value.Links["Alias"].Value.Description,
+				"security scheme": doc.Components.SecuritySchemes["Alias"].Value.Description,
+			}
+			for name, description := range descriptions {
+				t.Run(name, func(t *testing.T) {
+					require.Equal(t, test.wantDescription, description)
+				})
+			}
+
+			// Aliases retain the referenced value and apply metadata to it in place.
+			require.Same(t, doc.Components.Examples["Base"].Value, doc.Components.Examples["Alias"].Value)
+			require.Same(t, doc.Components.Headers["Base"].Value, doc.Components.Headers["Alias"].Value)
+			require.Same(t, doc.Components.Parameters["Base"].Value, doc.Components.Parameters["Alias"].Value)
+			require.Same(t, doc.Components.RequestBodies["Base"].Value, doc.Components.RequestBodies["Alias"].Value)
+			require.Same(t, doc.Components.Responses["Base"].Value, doc.Components.Responses["Alias"].Value)
+			require.Same(t, doc.Components.Links["Base"].Value, doc.Components.Responses["Base"].Value.Links["Alias"].Value)
+			require.Same(t, doc.Components.SecuritySchemes["Base"].Value, doc.Components.SecuritySchemes["Alias"].Value)
+
+			require.Equal(t, test.wantSummary, doc.Components.Examples["Base"].Value.Summary)
+			require.Equal(t, test.wantDescription, doc.Components.Examples["Base"].Value.Description)
+			require.Equal(t, test.wantDescription, doc.Components.Headers["Base"].Value.Description)
+			require.Equal(t, test.wantDescription, doc.Components.Parameters["Base"].Value.Description)
+			require.Equal(t, test.wantDescription, doc.Components.RequestBodies["Base"].Value.Description)
+			require.Equal(t, test.wantDescription, *doc.Components.Responses["Base"].Value.Description)
+			require.Equal(t, test.wantDescription, doc.Components.Links["Base"].Value.Description)
+			require.Equal(t, test.wantDescription, doc.Components.SecuritySchemes["Base"].Value.Description)
+		})
+	}
 }
 
 func TestLoadErrorOnRefMisuse(t *testing.T) {
@@ -290,7 +413,7 @@ func TestLoadFromRemoteURL(t *testing.T) {
 	doc, err := loader.LoadFromURI(url)
 	require.NoError(t, err)
 
-	require.Equal(t, "string", doc.Components.Schemas["TestSchema"].Value.Type)
+	require.Equal(t, &Types{"string"}, doc.Components.Schemas["TestSchema"].Value.Type)
 }
 
 func TestLoadWithReferenceInReference(t *testing.T) {
@@ -301,7 +424,7 @@ func TestLoadWithReferenceInReference(t *testing.T) {
 	require.NotNil(t, doc)
 	err = doc.Validate(loader.Context)
 	require.NoError(t, err)
-	require.Equal(t, "string", doc.Paths.Value("/api/test/ref/in/ref").Post.RequestBody.Value.Content["application/json"].Schema.Value.Properties["definition_reference"].Value.Type)
+	require.Equal(t, &Types{"string"}, doc.Paths.Value("/api/test/ref/in/ref").Post.RequestBody.Value.Content["application/json"].Schema.Value.Properties["definition_reference"].Value.Type)
 }
 
 func TestLoadWithRecursiveReferenceInLocalReferenceInParentSubdir(t *testing.T) {
@@ -312,7 +435,7 @@ func TestLoadWithRecursiveReferenceInLocalReferenceInParentSubdir(t *testing.T) 
 	require.NotNil(t, doc)
 	err = doc.Validate(loader.Context)
 	require.NoError(t, err)
-	require.Equal(t, "object", doc.Paths.Value("/api/test/ref/in/ref").Post.RequestBody.Value.Content["application/json"].Schema.Value.Properties["definition_reference"].Value.Type)
+	require.Equal(t, &Types{"object"}, doc.Paths.Value("/api/test/ref/in/ref").Post.RequestBody.Value.Content["application/json"].Schema.Value.Properties["definition_reference"].Value.Type)
 }
 
 func TestLoadWithRecursiveReferenceInReferenceInLocalReference(t *testing.T) {
@@ -323,7 +446,7 @@ func TestLoadWithRecursiveReferenceInReferenceInLocalReference(t *testing.T) {
 	require.NotNil(t, doc)
 	err = doc.Validate(loader.Context)
 	require.NoError(t, err)
-	require.Equal(t, "integer", doc.Paths.Value("/api/test/ref/in/ref").Post.RequestBody.Value.Content["application/json"].Schema.Value.Properties["data"].Value.Properties["definition_reference"].Value.Properties["ref_prop_part"].Value.Properties["idPart"].Value.Type)
+	require.Equal(t, &Types{"integer"}, doc.Paths.Value("/api/test/ref/in/ref").Post.RequestBody.Value.Content["application/json"].Schema.Value.Properties["data"].Value.Properties["definition_reference"].Value.Properties["ref_prop_part"].Value.Properties["idPart"].Value.Type)
 	require.Equal(t, "int64", doc.Paths.Value("/api/test/ref/in/ref").Post.RequestBody.Value.Content["application/json"].Schema.Value.Properties["data"].Value.Properties["definition_reference"].Value.Properties["ref_prop_part"].Value.Properties["idPart"].Value.Format)
 }
 
@@ -463,7 +586,7 @@ func TestLoadYamlFileWithExternalPathRef(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotNil(t, doc.Paths.Value("/test").Get.Responses.Value("200").Value.Content["application/json"].Schema.Value.Type)
-	require.Equal(t, "string", doc.Paths.Value("/test").Get.Responses.Value("200").Value.Content["application/json"].Schema.Value.Type)
+	require.Equal(t, &Types{"string"}, doc.Paths.Value("/test").Get.Responses.Value("200").Value.Content["application/json"].Schema.Value.Type)
 }
 
 func TestResolveResponseLinkRef(t *testing.T) {
@@ -520,7 +643,7 @@ func TestLinksFromOAISpec(t *testing.T) {
 	require.NoError(t, err)
 	response := doc.Paths.Value("/2.0/repositories/{username}/{slug}").Get.Responses.Status(200).Value
 	link := response.Links[`repositoryPullRequests`].Value
-	require.Equal(t, map[string]interface{}{
+	require.Equal(t, map[string]any{
 		"username": "$response.body#/owner/username",
 		"slug":     "$response.body#/slug",
 	}, link.Parameters)
@@ -671,4 +794,52 @@ func TestReadFromIoReader_Nil(t *testing.T) {
 	loader := NewLoader()
 	_, err := loader.LoadFromIoReader(nil)
 	require.EqualError(t, err, "invalid reader: <nil>")
+}
+
+func TestDefaultJoin(t *testing.T) {
+	tests := []struct {
+		name     string
+		base     string
+		rel      string
+		expected string
+	}{
+		{
+			name:     "relative path",
+			base:     "/home/user/openapi.yaml",
+			rel:      "schemas/pet.yaml",
+			expected: "/home/user/schemas/pet.yaml",
+		},
+		{
+			name:     "dot-slash relative path",
+			base:     "/home/user/openapi.yaml",
+			rel:      "./schemas/pet.yaml",
+			expected: "/home/user/schemas/pet.yaml",
+		},
+		{
+			name:     "parent directory",
+			base:     "/home/user/api/v1/openapi.yaml",
+			rel:      "../common/types.yaml",
+			expected: "/home/user/api/common/types.yaml",
+		},
+		{
+			name:     "nil base returns relative",
+			base:     "",
+			rel:      "schemas/pet.yaml",
+			expected: "schemas/pet.yaml",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rel := &url.URL{Path: tt.rel}
+			if tt.base == "" {
+				result := defaultJoin(nil, rel)
+				require.Equal(t, tt.expected, result.Path)
+				return
+			}
+			base := &url.URL{Path: tt.base}
+			result := defaultJoin(base, rel)
+			require.Equal(t, tt.expected, result.Path)
+		})
+	}
 }

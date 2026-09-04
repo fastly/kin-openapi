@@ -1,9 +1,11 @@
-package openapi3
+package openapi3_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 func TestIssue492(t *testing.T) {
@@ -27,7 +29,7 @@ info:
   title: title
 `[1:])
 
-	loader := NewLoader()
+	loader := openapi3.NewLoader()
 	doc, err := loader.LoadFromData(spec)
 	require.NoError(t, err)
 
@@ -35,16 +37,16 @@ info:
 	require.NoError(t, err)
 
 	// verify that the expected format works
-	err = doc.Components.Schemas["Server"].Value.VisitJSON(map[string]interface{}{
+	err = doc.Components.Schemas["Server"].Value.VisitJSON(map[string]any{
 		"name": "kin-openapi",
 		"time": "2001-02-03T04:05:06.789Z",
 	})
 	require.NoError(t, err)
 
 	// verify that the issue is fixed
-	err = doc.Components.Schemas["Server"].Value.VisitJSON(map[string]interface{}{
+	err = doc.Components.Schemas["Server"].Value.VisitJSON(map[string]any{
 		"name": "kin-openapi",
 		"time": "2001-02-03T04:05:06:789Z",
 	})
-	require.ErrorContains(t, err, `Error at "/time": string doesn't match the format "date-time" (regular expression "^[0-9]{4}-(0[0-9]|10|11|12)-([0-2][0-9]|30|31)T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|(\+|-)[0-9]{2}:[0-9]{2})?$")`)
+	require.EqualError(t, err, `Error at "/time": string doesn't match the format "date-time": string doesn't match pattern "`+openapi3.FormatOfStringDateTime+`"`)
 }

@@ -6,15 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/invopop/yaml"
+	"github.com/oasdiff/yaml"
 
 	"github.com/getkin/kin-openapi/openapi2"
 	"github.com/getkin/kin-openapi/openapi3"
-)
-
-var (
-	defaultCircular = openapi3.CircularReferenceCounter
-	circular        = flag.Int("circular", defaultCircular, "bump this (upper) limit when there's trouble with cyclic schema references")
 )
 
 var (
@@ -37,11 +32,16 @@ var (
 	patterns        = flag.Bool("patterns", defaultPatterns, "when false, allows schema patterns unsupported by the Go regexp engine")
 )
 
+var (
+	defaultMulti = false
+	multi        = flag.Bool("multi", defaultMulti, "when true, aggregate independent validation errors instead of returning the first one")
+)
+
 func main() {
 	flag.Parse()
 	filename := flag.Arg(0)
 	if len(flag.Args()) != 1 || filename == "" {
-		log.Fatalf("Usage: go run github.com/getkin/kin-openapi/cmd/validate@latest [--circular] [--defaults] [--examples] [--ext] [--patterns] -- <local YAML or JSON file>\nGot: %+v\n", os.Args)
+		log.Fatalf("Usage: go run github.com/getkin/kin-openapi/cmd/validate@latest [--defaults] [--examples] [--ext] [--patterns] [--multi] -- <local YAML or JSON file>\nGot: %+v\n", os.Args)
 	}
 
 	data, err := os.ReadFile(filename)
@@ -53,13 +53,12 @@ func main() {
 		OpenAPI string `json:"openapi" yaml:"openapi"`
 		Swagger string `json:"swagger" yaml:"swagger"`
 	}
-	if err := yaml.Unmarshal(data, &vd); err != nil {
+	if _, err := yaml.Unmarshal(data, &vd, yaml.DecodeOpts{DisableTimestamps: true}); err != nil {
 		log.Fatal(err)
 	}
 
 	switch {
 	case vd.OpenAPI == "3" || strings.HasPrefix(vd.OpenAPI, "3."):
-		openapi3.CircularReferenceCounter = *circular
 		loader := openapi3.NewLoader()
 		loader.IsExternalRefsAllowed = *ext
 
@@ -83,6 +82,9 @@ func main() {
 		if !*patterns {
 			opts = append(opts, openapi3.DisableSchemaPatternValidation())
 		}
+		if *multi {
+			opts = append(opts, openapi3.EnableMultiError())
+		}
 
 		if err = doc.Validate(loader.Context, opts...); err != nil {
 			log.Fatalln("Validation error:", err)
@@ -90,9 +92,6 @@ func main() {
 
 	case vd.OpenAPI == "2" || strings.HasPrefix(vd.OpenAPI, "2."),
 		vd.Swagger == "2" || strings.HasPrefix(vd.Swagger, "2."):
-		if *circular != defaultCircular {
-			log.Fatal("Flag --circular is only for OpenAPIv3")
-		}
 		if *defaults != defaultDefaults {
 			log.Fatal("Flag --defaults is only for OpenAPIv3")
 		}
@@ -105,9 +104,12 @@ func main() {
 		if *patterns != defaultPatterns {
 			log.Fatal("Flag --patterns is only for OpenAPIv3")
 		}
+		if *multi != defaultMulti {
+			log.Fatal("Flag --multi is only for OpenAPIv3")
+		}
 
 		var doc openapi2.T
-		if err := yaml.Unmarshal(data, &doc); err != nil {
+		if _, err := yaml.Unmarshal(data, &doc, yaml.DecodeOpts{DisableTimestamps: true}); err != nil {
 			log.Fatalln("Loading error:", err)
 		}
 

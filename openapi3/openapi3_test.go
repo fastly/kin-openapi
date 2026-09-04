@@ -1,18 +1,20 @@
-package openapi3
+package openapi3_test
 
 import (
-	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
-	"github.com/invopop/yaml"
+	"github.com/oasdiff/yaml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 func TestRefsJSON(t *testing.T) {
-	loader := NewLoader()
+	loader := openapi3.NewLoader()
 
 	t.Log("Marshal *T to JSON")
 	data, err := json.Marshal(spec())
@@ -20,7 +22,7 @@ func TestRefsJSON(t *testing.T) {
 	require.NotEmpty(t, data)
 
 	t.Log("Unmarshal *T from JSON")
-	docA := &T{}
+	docA := &openapi3.T{}
 	err = json.Unmarshal(specJSON, &docA)
 	require.NoError(t, err)
 	require.NotEmpty(t, data)
@@ -50,7 +52,7 @@ func TestRefsJSON(t *testing.T) {
 }
 
 func TestRefsYAML(t *testing.T) {
-	loader := NewLoader()
+	loader := openapi3.NewLoader()
 
 	t.Log("Marshal *T to YAML")
 	data, err := yaml.Marshal(spec())
@@ -58,8 +60,8 @@ func TestRefsYAML(t *testing.T) {
 	require.NotEmpty(t, data)
 
 	t.Log("Unmarshal *T from YAML")
-	docA := &T{}
-	err = yaml.Unmarshal(specYAML, &docA)
+	docA := &openapi3.T{}
+	_, err = yaml.Unmarshal(specYAML, &docA, yaml.DecodeOpts{DisableTimestamps: true})
 	require.NoError(t, err)
 	require.NotEmpty(t, data)
 
@@ -82,18 +84,9 @@ func TestRefsYAML(t *testing.T) {
 	require.NoError(t, err)
 	dataB, err := yaml.Marshal(docB)
 	require.NoError(t, err)
-	eqYAML(t, data, specYAML)
-	eqYAML(t, data, dataA)
-	eqYAML(t, data, dataB)
-}
-
-func eqYAML(t *testing.T, expected, actual []byte) {
-	var e, a interface{}
-	err := yaml.Unmarshal(expected, &e)
-	require.NoError(t, err)
-	err = yaml.Unmarshal(actual, &a)
-	require.NoError(t, err)
-	require.Equal(t, e, a)
+	require.YAMLEq(t, string(data), string(specYAML))
+	require.YAMLEq(t, string(data), string(dataA))
+	require.YAMLEq(t, string(data), string(dataB))
 }
 
 var specYAML = []byte(`
@@ -245,54 +238,54 @@ var specJSON = []byte(`
 }
 `)
 
-func spec() *T {
-	parameter := &Parameter{
+func spec() *openapi3.T {
+	parameter := &openapi3.Parameter{
 		Description: "Some parameter",
 		Name:        "example",
 		In:          "query",
-		Schema: &SchemaRef{
+		Schema: &openapi3.SchemaRef{
 			Ref: "#/components/schemas/someSchema",
 		},
 	}
-	requestBody := &RequestBody{
+	requestBody := &openapi3.RequestBody{
 		Description: "Some request body",
-		Content:     NewContent(),
+		Content:     openapi3.NewContent(),
 	}
 	responseDescription := "Some response"
-	response := &Response{
+	response := &openapi3.Response{
 		Description: &responseDescription,
 	}
-	schema := &Schema{
+	schema := &openapi3.Schema{
 		Description: "Some schema",
 	}
 	example := map[string]string{"name": "Some example"}
-	return &T{
+	return &openapi3.T{
 		OpenAPI: "3.0",
-		Info: &Info{
+		Info: &openapi3.Info{
 			Title:   "MyAPI",
 			Version: "0.1",
 		},
-		Paths: NewPaths(
-			WithPath("/hello", &PathItem{
-				Post: &Operation{
-					Parameters: Parameters{
+		Paths: openapi3.NewPaths(
+			openapi3.WithPath("/hello", &openapi3.PathItem{
+				Post: &openapi3.Operation{
+					Parameters: openapi3.Parameters{
 						{
 							Ref:   "#/components/parameters/someParameter",
 							Value: parameter,
 						},
 					},
-					RequestBody: &RequestBodyRef{
+					RequestBody: &openapi3.RequestBodyRef{
 						Ref:   "#/components/requestBodies/someRequestBody",
 						Value: requestBody,
 					},
-					Responses: NewResponses(
-						WithStatus(200, &ResponseRef{
+					Responses: openapi3.NewResponses(
+						openapi3.WithStatus(200, &openapi3.ResponseRef{
 							Ref:   "#/components/responses/someResponse",
 							Value: response,
 						}),
 					),
 				},
-				Parameters: Parameters{
+				Parameters: openapi3.Parameters{
 					{
 						Ref:   "#/components/parameters/someParameter",
 						Value: parameter,
@@ -300,31 +293,31 @@ func spec() *T {
 				},
 			}),
 		),
-		Components: &Components{
-			Parameters: ParametersMap{
+		Components: &openapi3.Components{
+			Parameters: openapi3.ParametersMap{
 				"someParameter": {Value: parameter},
 			},
-			RequestBodies: RequestBodies{
+			RequestBodies: openapi3.RequestBodies{
 				"someRequestBody": {Value: requestBody},
 			},
-			Responses: ResponseBodies{
+			Responses: openapi3.ResponseBodies{
 				"someResponse": {Value: response},
 			},
-			Schemas: Schemas{
+			Schemas: openapi3.Schemas{
 				"someSchema": {Value: schema},
 			},
-			Headers: Headers{
+			Headers: openapi3.Headers{
 				"someHeader":  {Ref: "#/components/headers/otherHeader"},
-				"otherHeader": {Value: &Header{Parameter{Schema: &SchemaRef{Value: NewStringSchema()}}}},
+				"otherHeader": {Value: &openapi3.Header{openapi3.Parameter{Schema: &openapi3.SchemaRef{Value: openapi3.NewStringSchema()}}}},
 			},
-			Examples: Examples{
+			Examples: openapi3.Examples{
 				"someExample":  {Ref: "#/components/examples/otherExample"},
-				"otherExample": {Value: NewExample(example)},
+				"otherExample": {Value: openapi3.NewExample(example)},
 			},
-			SecuritySchemes: SecuritySchemes{
+			SecuritySchemes: openapi3.SecuritySchemes{
 				"someSecurityScheme": {Ref: "#/components/securitySchemes/otherSecurityScheme"},
 				"otherSecurityScheme": {
-					Value: &SecurityScheme{
+					Value: &openapi3.SecurityScheme{
 						Description: "Some security scheme",
 						Type:        "apiKey",
 						In:          "query",
@@ -432,17 +425,17 @@ components:
 			name: "tags section is invalid",
 			spec: strings.Replace(spec, tags,
 				strings.ReplaceAll(tags, "url: https://tags-ext-docs.com", "url: ''"), 1),
-			expectedErr: "invalid tags: invalid external docs: url is required",
+			expectedErr: "invalid tags: tag \"pet\": invalid external docs: url is required",
 		},
 	}
 	for i := range tests {
 		tt := tests[i]
 		t.Run(tt.name, func(t *testing.T) {
-			doc := &T{}
-			err := yaml.Unmarshal([]byte(tt.spec), &doc)
+			doc := &openapi3.T{}
+			_, err := yaml.Unmarshal([]byte(tt.spec), &doc, yaml.DecodeOpts{DisableTimestamps: true})
 			require.NoError(t, err)
 
-			err = doc.Validate(context.Background())
+			err = doc.Validate(t.Context())
 			if tt.expectedErr != "" {
 				require.EqualError(t, err, tt.expectedErr)
 			} else {
@@ -453,21 +446,21 @@ components:
 }
 
 func TestAddRemoveServer(t *testing.T) {
-	testServerLines := []*Server{{URL: "test0.com"}, {URL: "test1.com"}, {URL: "test3.com"}}
+	testServerLines := []*openapi3.Server{{URL: "test0.com"}, {URL: "test1.com"}, {URL: "test3.com"}}
 
-	doc3 := &T{
+	doc3 := &openapi3.T{
 		OpenAPI:    "3.0.3",
-		Components: &Components{},
+		Components: &openapi3.Components{},
 	}
 
 	assert.Empty(t, doc3.Servers)
 
-	doc3.AddServer(&Server{URL: "testserver1.com"})
+	doc3.AddServer(&openapi3.Server{URL: "testserver1.com"})
 
 	assert.NotEmpty(t, doc3.Servers)
 	assert.Len(t, doc3.Servers, 1)
 
-	doc3.Servers = Servers{}
+	doc3.Servers = openapi3.Servers{}
 
 	assert.Empty(t, doc3.Servers)
 
@@ -476,12 +469,42 @@ func TestAddRemoveServer(t *testing.T) {
 	assert.NotEmpty(t, doc3.Servers)
 	assert.Len(t, doc3.Servers, 3)
 
-	doc3.Servers = Servers{}
+	doc3.Servers = openapi3.Servers{}
 
 	doc3.AddServers(testServerLines...)
 
 	assert.NotEmpty(t, doc3.Servers)
 	assert.Len(t, doc3.Servers, 3)
 
-	doc3.Servers = Servers{}
+	doc3.Servers = openapi3.Servers{}
+}
+
+func TestOpenAPIMajorMinor(t *testing.T) {
+	var doc *openapi3.T
+	require.Equal(t, "", doc.OpenAPIMajorMinor())
+	require.False(t, doc.IsOpenAPI30())
+	require.False(t, doc.IsOpenAPI31OrLater())
+	require.False(t, doc.IsOpenAPI32OrLater())
+
+	doc = &openapi3.T{}
+	require.Equal(t, "", doc.OpenAPIMajorMinor())
+	require.False(t, doc.IsOpenAPI30())
+	require.False(t, doc.IsOpenAPI31OrLater())
+	require.False(t, doc.IsOpenAPI32OrLater())
+
+	semvers := []string{"3", "3.0", "3.0.0", "3.0.1", "3.0.2", "3.0.3", "3.0.4", "3.1", "3.1.0", "3.1.1", "3.1.2", "3.2", "3.2.0"}
+	mms := []string{"3.0", "3.0", "3.0", "3.0", "3.0", "3.0", "3.0", "3.1", "3.1", "3.1", "3.1", "3.2", "3.2"}
+	three0s := []bool{true, true, true, true, true, true, true, false, false, false, false, false, false}
+	three1plusses := []bool{false, false, false, false, false, false, false, true, true, true, true, true, true}
+	three2plusses := []bool{false, false, false, false, false, false, false, false, false, false, false, true, true}
+	for i := range len(semvers) {
+		t.Run(fmt.Sprintf("openapi:%s", semvers[i]), func(t *testing.T) {
+			t.Parallel()
+			doc := &openapi3.T{OpenAPI: semvers[i]}
+			require.Equal(t, mms[i], doc.OpenAPIMajorMinor())
+			require.Equal(t, three0s[i], doc.IsOpenAPI30())
+			require.Equal(t, three1plusses[i], doc.IsOpenAPI31OrLater())
+			require.Equal(t, three2plusses[i], doc.IsOpenAPI32OrLater())
+		})
+	}
 }

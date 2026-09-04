@@ -3,15 +3,15 @@ package openapi3
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
+	"maps"
 	"net/url"
 )
 
 // ExternalDocs is specified by OpenAPI/Swagger standard version 3.
 // See https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.0.3.md#external-documentation-object
 type ExternalDocs struct {
-	Extensions map[string]interface{} `json:"-" yaml:"-"`
+	Extensions map[string]any `json:"-" yaml:"-"`
+	Origin     *Origin        `json:"-" yaml:"-"`
 
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 	URL         string `json:"url,omitempty" yaml:"url,omitempty"`
@@ -19,17 +19,24 @@ type ExternalDocs struct {
 
 // MarshalJSON returns the JSON encoding of ExternalDocs.
 func (e ExternalDocs) MarshalJSON() ([]byte, error) {
-	m := make(map[string]interface{}, 2+len(e.Extensions))
-	for k, v := range e.Extensions {
-		m[k] = v
+	x, err := e.MarshalYAML()
+	if err != nil {
+		return nil, err
 	}
+	return json.Marshal(x)
+}
+
+// MarshalYAML returns the YAML encoding of ExternalDocs.
+func (e ExternalDocs) MarshalYAML() (any, error) {
+	m := make(map[string]any, 2+len(e.Extensions))
+	maps.Copy(m, e.Extensions)
 	if x := e.Description; x != "" {
 		m["description"] = x
 	}
 	if x := e.URL; x != "" {
 		m["url"] = x
 	}
-	return json.Marshal(m)
+	return m, nil
 }
 
 // UnmarshalJSON sets ExternalDocs to a copy of data.
@@ -52,13 +59,18 @@ func (e *ExternalDocs) UnmarshalJSON(data []byte) error {
 // Validate returns an error if ExternalDocs does not comply with the OpenAPI spec.
 func (e *ExternalDocs) Validate(ctx context.Context, opts ...ValidationOption) error {
 	ctx = WithValidationOptions(ctx, opts...)
+	me := newErrCollector(ctx)
 
 	if e.URL == "" {
-		return errors.New("url is required")
+		if err := me.emit(newExternalDocsURLRequired(e.Origin)); err != nil {
+			return err
+		}
 	}
 	if _, err := url.Parse(e.URL); err != nil {
-		return fmt.Errorf("url is incorrect: %w", err)
+		if err := me.emit(&ExternalDocsURLValidationError{Cause: err}); err != nil {
+			return err
+		}
 	}
 
-	return validateExtensions(ctx, e.Extensions)
+	return me.finalize(validateExtensions(ctx, e.Extensions, e.Origin))
 }

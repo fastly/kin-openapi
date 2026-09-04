@@ -2,6 +2,7 @@ package openapi2
 
 import (
 	"encoding/json"
+	"maps"
 
 	"github.com/getkin/kin-openapi/openapi3"
 )
@@ -9,7 +10,7 @@ import (
 type SecurityRequirements []map[string][]string
 
 type SecurityScheme struct {
-	Extensions map[string]interface{} `json:"-" yaml:"-"`
+	Extensions map[string]any `json:"-" yaml:"-"`
 
 	Ref string `json:"$ref,omitempty" yaml:"$ref,omitempty"`
 
@@ -30,10 +31,8 @@ func (securityScheme SecurityScheme) MarshalJSON() ([]byte, error) {
 		return json.Marshal(openapi3.Ref{Ref: ref})
 	}
 
-	m := make(map[string]interface{}, 10+len(securityScheme.Extensions))
-	for k, v := range securityScheme.Extensions {
-		m[k] = v
-	}
+	m := make(map[string]any, 10+len(securityScheme.Extensions))
+	maps.Copy(m, securityScheme.Extensions)
 	if x := securityScheme.Description; x != "" {
 		m["description"] = x
 	}

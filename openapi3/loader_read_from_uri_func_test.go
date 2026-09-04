@@ -10,16 +10,43 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestReadFromURIFunc_CalledEvenWhenExternalRefsDisallowed verifies that a custom
+// ReadFromURIFunc is invoked for external $refs even when IsExternalRefsAllowed=false.
+//
+// Background: kin-openapi's default behaviour rejects external $refs unless
+// IsExternalRefsAllowed=true (SSRF protection). But a caller that installs a
+// custom ReadFromURIFunc has already opted in to custom URI resolution — the
+// function itself is the right place to enforce whatever access policy applies.
+// Blocking the call before the function is ever invoked makes the hook useless
+// for custom loaders (e.g. loading specs from git revisions) that don't want to
+// allow arbitrary HTTP refs but do need to resolve relative file refs.
+func TestReadFromURIFunc_CalledEvenWhenExternalRefsDisallowed(t *testing.T) {
+	loader := NewLoader()
+	// IsExternalRefsAllowed is false by default — do NOT set it to true.
+
+	loader.ReadFromURIFunc = func(loader *Loader, location *url.URL) ([]byte, error) {
+		return os.ReadFile(filepath.Join("testdata", filepath.FromSlash(location.Path)))
+	}
+
+	// recursiveRef/openapi.yml contains external $refs to sibling files.
+	// Without the fix, this would fail with "encountered disallowed external reference"
+	// because IsExternalRefsAllowed=false.
+	doc, err := loader.LoadFromFile("recursiveRef/openapi.yml")
+	require.NoError(t, err)
+	require.NotNil(t, doc)
+}
+
 func TestLoaderReadFromURIFunc(t *testing.T) {
 	loader := NewLoader()
 	loader.IsExternalRefsAllowed = true
 	loader.ReadFromURIFunc = func(loader *Loader, url *url.URL) ([]byte, error) {
-		return os.ReadFile(filepath.Join("testdata", url.Path))
+		return os.ReadFile(filepath.Join("testdata", filepath.FromSlash(url.Path)))
 	}
 	doc, err := loader.LoadFromFile("recursiveRef/openapi.yml")
 	require.NoError(t, err)
 	require.NotNil(t, doc)
-	require.NoError(t, doc.Validate(loader.Context))
+	err = doc.Validate(loader.Context)
+	require.NoError(t, err)
 	require.Equal(t, "bar", doc.
 		Paths.Value("/foo").
 		Get.
@@ -54,10 +81,10 @@ func (l *multipleSourceLoaderExample) resolveSourceFromURI(location fmt.Stringer
 func TestResolveSchemaExternalRef(t *testing.T) {
 	rootLocation := &url.URL{Scheme: "http", Host: "example.com", Path: "spec.json"}
 	externalLocation := &url.URL{Scheme: "http", Host: "example.com", Path: "external.json"}
-	rootSpec := []byte(fmt.Sprintf(
+	rootSpec := fmt.Appendf(nil,
 		`{"openapi":"3.0.0","info":{"title":"MyAPI","version":"0.1","description":"An API"},"paths":{},"components":{"schemas":{"Root":{"allOf":[{"$ref":"%s#/components/schemas/External"}]}}}}`,
 		externalLocation.String(),
-	))
+	)
 	externalSpec := []byte(`{"openapi":"3.0.0","info":{"title":"MyAPI","version":"0.1","description":"External Spec"},"paths":{},"components":{"schemas":{"External":{"type":"string"}}}}`)
 	multipleSourceLoader := &multipleSourceLoaderExample{
 		Sources: map[string][]byte{

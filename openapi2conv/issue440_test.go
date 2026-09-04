@@ -1,7 +1,6 @@
-package openapi2conv
+package openapi2conv_test
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"testing"
@@ -9,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/getkin/kin-openapi/openapi2"
+	"github.com/getkin/kin-openapi/openapi2conv"
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
@@ -20,9 +20,9 @@ func TestIssue440(t *testing.T) {
 	err = json.NewDecoder(doc2file).Decode(&doc2)
 	require.NoError(t, err)
 
-	doc3, err := ToV3(&doc2)
+	doc3, err := openapi2conv.ToV3(&doc2)
 	require.NoError(t, err)
-	err = doc3.Validate(context.Background())
+	err = doc3.Validate(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, openapi3.Servers{
 		{URL: "https://petstore.swagger.io/v2"},
@@ -32,9 +32,9 @@ func TestIssue440(t *testing.T) {
 	doc2.Host = "your-bot-domain.de"
 	doc2.Schemes = nil
 	doc2.BasePath = ""
-	doc3, err = ToV3(&doc2)
+	doc3, err = openapi2conv.ToV3(&doc2)
 	require.NoError(t, err)
-	err = doc3.Validate(context.Background())
+	err = doc3.Validate(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, openapi3.Servers{
 		{URL: "https://your-bot-domain.de/"},
@@ -43,7 +43,8 @@ func TestIssue440(t *testing.T) {
 	doc2.Host = "https://your-bot-domain.de"
 	doc2.Schemes = nil
 	doc2.BasePath = ""
-	doc3, err = ToV3(&doc2)
+	doc3, err = openapi2conv.ToV3(&doc2)
 	require.Error(t, err)
 	require.ErrorContains(t, err, `invalid host`)
+	require.Nil(t, doc3)
 }

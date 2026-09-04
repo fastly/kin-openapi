@@ -1,14 +1,14 @@
-package openapi2conv
+package openapi2conv_test
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 
-	"github.com/invopop/yaml"
+	"github.com/oasdiff/yaml"
 	"github.com/stretchr/testify/require"
 
 	"github.com/getkin/kin-openapi/openapi2"
+	"github.com/getkin/kin-openapi/openapi2conv"
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
@@ -17,16 +17,16 @@ func v2v3JSON(spec2 []byte) (doc3 *openapi3.T, err error) {
 	if err = json.Unmarshal(spec2, &doc2); err != nil {
 		return
 	}
-	doc3, err = ToV3(&doc2)
+	doc3, err = openapi2conv.ToV3(&doc2)
 	return
 }
 
 func v2v3YAML(spec2 []byte) (doc3 *openapi3.T, err error) {
 	var doc2 openapi2.T
-	if err = yaml.Unmarshal(spec2, &doc2); err != nil {
+	if _, err = yaml.Unmarshal(spec2, &doc2, yaml.DecodeOpts{DisableTimestamps: true}); err != nil {
 		return
 	}
-	doc3, err = ToV3(&doc2)
+	doc3, err = openapi2conv.ToV3(&doc2)
 	return
 }
 
@@ -104,9 +104,9 @@ func TestIssue187(t *testing.T) {
 	spec3, err := json.Marshal(doc3)
 	require.NoError(t, err)
 	const expected = `{"components":{"schemas":{"model.ProductSearchAttributeRequest":{"properties":{"filterField":{"type":"string"},"filterKey":{"type":"string"},"type":{"type":"string"},"values":{"$ref":"#/components/schemas/model.ProductSearchAttributeValueRequest"}},"title":"model.ProductSearchAttributeRequest","type":"object"},"model.ProductSearchAttributeValueRequest":{"properties":{"imageUrl":{"type":"string"},"text":{"type":"string"}},"title":"model.ProductSearchAttributeValueRequest","type":"object"}}},"info":{"contact":{"email":"test@test.com","name":"Test"},"description":"Test Golang Application","title":"Test","version":"1.0"},"openapi":"3.0.3","paths":{"/me":{"get":{"operationId":"someTest","responses":{"200":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/model.ProductSearchAttributeRequest"}}},"description":"successful operation"}},"summary":"Some test","tags":["probe"]}}}}`
-	require.JSONEq(t, string(spec3), expected)
+	require.JSONEq(t, expected, string(spec3))
 
-	err = doc3.Validate(context.Background())
+	err = doc3.Validate(t.Context())
 	require.NoError(t, err)
 }
 
@@ -163,9 +163,9 @@ paths:
         "200":
           description: description
 `
-	require.YAMLEq(t, string(spec3), expected)
+	require.YAMLEq(t, expected, string(spec3))
 
-	err = doc3.Validate(context.Background())
+	err = doc3.Validate(t.Context())
 	require.NoError(t, err)
 }
 
@@ -188,7 +188,7 @@ securityDefinitions:
 	_, err = yaml.Marshal(doc3)
 	require.NoError(t, err)
 
-	doc2, err := FromV3(doc3)
+	doc2, err := openapi2conv.FromV3(doc3)
 	require.NoError(t, err)
-	require.Equal(t, doc2.SecurityDefinitions["OAuth2Application"].Flow, "application")
+	require.Equal(t, "application", doc2.SecurityDefinitions["OAuth2Application"].Flow)
 }

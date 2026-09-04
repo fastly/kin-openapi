@@ -4,27 +4,26 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"maps"
 
 	"github.com/go-openapi/jsonpointer"
 )
 
-type (
-	Callbacks       map[string]*CallbackRef
-	Examples        map[string]*ExampleRef
-	Headers         map[string]*HeaderRef
-	Links           map[string]*LinkRef
-	ParametersMap   map[string]*ParameterRef
-	RequestBodies   map[string]*RequestBodyRef
-	ResponseBodies  map[string]*ResponseRef
-	Schemas         map[string]*SchemaRef
-	SecuritySchemes map[string]*SecuritySchemeRef
-)
+type Callbacks map[string]*CallbackRef             // Callbacks represents components' named callbacks
+type Examples map[string]*ExampleRef               // Examples represents components' named examples
+type Headers map[string]*HeaderRef                 // Headers represents components' named headers
+type Links map[string]*LinkRef                     // Links represents components' named links
+type ParametersMap map[string]*ParameterRef        // ParametersMap represents components' named parameters
+type RequestBodies map[string]*RequestBodyRef      // RequestBodies represents components' named request bodies
+type ResponseBodies map[string]*ResponseRef        // ResponseBodies represents components' named response bodies
+type Schemas map[string]*SchemaRef                 // Schemas represents components' named schemas
+type SecuritySchemes map[string]*SecuritySchemeRef // SecuritySchemes represents components' named security schemes
 
 // Components is specified by OpenAPI/Swagger standard version 3.
 // See https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.0.3.md#components-object
 type Components struct {
-	Extensions map[string]interface{} `json:"-" yaml:"-"`
+	Extensions map[string]any `json:"-" yaml:"-"`
+	Origin     *Origin        `json:"-" yaml:"-"`
 
 	Schemas         Schemas         `json:"schemas,omitempty" yaml:"schemas,omitempty"`
 	Parameters      ParametersMap   `json:"parameters,omitempty" yaml:"parameters,omitempty"`
@@ -43,10 +42,17 @@ func NewComponents() Components {
 
 // MarshalJSON returns the JSON encoding of Components.
 func (components Components) MarshalJSON() ([]byte, error) {
-	m := make(map[string]interface{}, 9+len(components.Extensions))
-	for k, v := range components.Extensions {
-		m[k] = v
+	x, err := components.MarshalYAML()
+	if err != nil {
+		return nil, err
 	}
+	return json.Marshal(x)
+}
+
+// MarshalYAML returns the YAML encoding of Components.
+func (components Components) MarshalYAML() (any, error) {
+	m := make(map[string]any, 9+len(components.Extensions))
+	maps.Copy(m, components.Extensions)
 	if x := components.Schemas; len(x) != 0 {
 		m["schemas"] = x
 	}
@@ -74,7 +80,7 @@ func (components Components) MarshalJSON() ([]byte, error) {
 	if x := components.Callbacks; len(x) != 0 {
 		m["callbacks"] = x
 	}
-	return json.Marshal(m)
+	return m, nil
 }
 
 // UnmarshalJSON sets Components to a copy of data.
@@ -102,151 +108,92 @@ func (components *Components) UnmarshalJSON(data []byte) error {
 }
 
 // Validate returns an error if Components does not comply with the OpenAPI spec.
-func (components *Components) Validate(ctx context.Context, opts ...ValidationOption) (err error) {
+func (components *Components) Validate(ctx context.Context, opts ...ValidationOption) error {
 	ctx = WithValidationOptions(ctx, opts...)
+	me := newErrCollector(ctx)
 
-	schemas := make([]string, 0, len(components.Schemas))
-	for name := range components.Schemas {
-		schemas = append(schemas, name)
-	}
-	sort.Strings(schemas)
-	for _, k := range schemas {
-		v := components.Schemas[k]
-		if err = ValidateIdentifier(k); err != nil {
-			return fmt.Errorf("schema %q: %w", k, err)
+	validateMap := func(label string, names []string, validate func(k string) error) error {
+		for _, k := range names {
+			if idErr := ValidateIdentifier(k); idErr != nil {
+				if err := me.emit(&ComponentValidationError{Section: label, Name: k, Cause: idErr}); err != nil {
+					return err
+				}
+				// Skip validating the component's value when its name is
+				// invalid: any leaf error from validate(k) would surface as
+				// "<bad-name>: <leaf-error>" and has no resolution path
+				// until the name is fixed. The continue keeps the noise
+				// per component bounded to a single, actionable finding.
+				continue
+			}
+			wrap := func(e error) error { return &ComponentValidationError{Section: label, Name: k, Cause: e} }
+			if err := me.emitWrapped(wrap, validate(k)); err != nil {
+				return err
+			}
 		}
-		if err = v.Validate(ctx); err != nil {
-			return fmt.Errorf("schema %q: %w", k, err)
-		}
-	}
-
-	parameters := make([]string, 0, len(components.Parameters))
-	for name := range components.Parameters {
-		parameters = append(parameters, name)
-	}
-	sort.Strings(parameters)
-	for _, k := range parameters {
-		v := components.Parameters[k]
-		if err = ValidateIdentifier(k); err != nil {
-			return fmt.Errorf("parameter %q: %w", k, err)
-		}
-		if err = v.Validate(ctx); err != nil {
-			return fmt.Errorf("parameter %q: %w", k, err)
-		}
+		return nil
 	}
 
-	requestBodies := make([]string, 0, len(components.RequestBodies))
-	for name := range components.RequestBodies {
-		requestBodies = append(requestBodies, name)
-	}
-	sort.Strings(requestBodies)
-	for _, k := range requestBodies {
-		v := components.RequestBodies[k]
-		if err = ValidateIdentifier(k); err != nil {
-			return fmt.Errorf("request body %q: %w", k, err)
-		}
-		if err = v.Validate(ctx); err != nil {
-			return fmt.Errorf("request body %q: %w", k, err)
-		}
+	if err := validateMap("schema", componentNames(components.Schemas), func(k string) error {
+		return components.Schemas[k].Validate(ctx)
+	}); err != nil {
+		return err
 	}
 
-	responses := make([]string, 0, len(components.Responses))
-	for name := range components.Responses {
-		responses = append(responses, name)
-	}
-	sort.Strings(responses)
-	for _, k := range responses {
-		if err = ValidateIdentifier(k); err != nil {
-			return fmt.Errorf("response %q: %w", k, err)
-		}
-		v := components.Responses[k]
-		if err = v.Validate(ctx); err != nil {
-			return fmt.Errorf("response %q: %w", k, err)
-		}
+	if err := validateMap("parameter", componentNames(components.Parameters), func(k string) error {
+		return components.Parameters[k].Validate(ctx)
+	}); err != nil {
+		return err
 	}
 
-	headers := make([]string, 0, len(components.Headers))
-	for name := range components.Headers {
-		headers = append(headers, name)
-	}
-	sort.Strings(headers)
-	for _, k := range headers {
-		v := components.Headers[k]
-		if err = ValidateIdentifier(k); err != nil {
-			return fmt.Errorf("header %q: %w", k, err)
-		}
-		if err = v.Validate(ctx); err != nil {
-			return fmt.Errorf("header %q: %w", k, err)
-		}
+	if err := validateMap("request body", componentNames(components.RequestBodies), func(k string) error {
+		return components.RequestBodies[k].Validate(ctx)
+	}); err != nil {
+		return err
 	}
 
-	securitySchemes := make([]string, 0, len(components.SecuritySchemes))
-	for name := range components.SecuritySchemes {
-		securitySchemes = append(securitySchemes, name)
-	}
-	sort.Strings(securitySchemes)
-	for _, k := range securitySchemes {
-		v := components.SecuritySchemes[k]
-		if err = ValidateIdentifier(k); err != nil {
-			return fmt.Errorf("security scheme %q: %w", k, err)
-		}
-		if err = v.Validate(ctx); err != nil {
-			return fmt.Errorf("security scheme %q: %w", k, err)
-		}
+	if err := validateMap("response", componentNames(components.Responses), func(k string) error {
+		return components.Responses[k].Validate(ctx)
+	}); err != nil {
+		return err
 	}
 
-	examples := make([]string, 0, len(components.Examples))
-	for name := range components.Examples {
-		examples = append(examples, name)
-	}
-	sort.Strings(examples)
-	for _, k := range examples {
-		v := components.Examples[k]
-		if err = ValidateIdentifier(k); err != nil {
-			return fmt.Errorf("example %q: %w", k, err)
-		}
-		if err = v.Validate(ctx); err != nil {
-			return fmt.Errorf("example %q: %w", k, err)
-		}
+	if err := validateMap("header", componentNames(components.Headers), func(k string) error {
+		return components.Headers[k].Validate(ctx)
+	}); err != nil {
+		return err
 	}
 
-	links := make([]string, 0, len(components.Links))
-	for name := range components.Links {
-		links = append(links, name)
-	}
-	sort.Strings(links)
-	for _, k := range links {
-		v := components.Links[k]
-		if err = ValidateIdentifier(k); err != nil {
-			return fmt.Errorf("link %q: %w", k, err)
-		}
-		if err = v.Validate(ctx); err != nil {
-			return fmt.Errorf("link %q: %w", k, err)
-		}
+	if err := validateMap("security scheme", componentNames(components.SecuritySchemes), func(k string) error {
+		return components.SecuritySchemes[k].Validate(ctx)
+	}); err != nil {
+		return err
 	}
 
-	callbacks := make([]string, 0, len(components.Callbacks))
-	for name := range components.Callbacks {
-		callbacks = append(callbacks, name)
-	}
-	sort.Strings(callbacks)
-	for _, k := range callbacks {
-		v := components.Callbacks[k]
-		if err = ValidateIdentifier(k); err != nil {
-			return fmt.Errorf("callback %q: %w", k, err)
-		}
-		if err = v.Validate(ctx); err != nil {
-			return fmt.Errorf("callback %q: %w", k, err)
-		}
+	if err := validateMap("example", componentNames(components.Examples), func(k string) error {
+		return components.Examples[k].Validate(ctx)
+	}); err != nil {
+		return err
 	}
 
-	return validateExtensions(ctx, components.Extensions)
+	if err := validateMap("link", componentNames(components.Links), func(k string) error {
+		return components.Links[k].Validate(ctx)
+	}); err != nil {
+		return err
+	}
+
+	if err := validateMap("callback", componentNames(components.Callbacks), func(k string) error {
+		return components.Callbacks[k].Validate(ctx)
+	}); err != nil {
+		return err
+	}
+
+	return me.finalize(validateExtensions(ctx, components.Extensions, components.Origin))
 }
 
 var _ jsonpointer.JSONPointable = (*Schemas)(nil)
 
 // JSONLookup implements https://pkg.go.dev/github.com/go-openapi/jsonpointer#JSONPointable
-func (m Schemas) JSONLookup(token string) (interface{}, error) {
+func (m Schemas) JSONLookup(token string) (any, error) {
 	if v, ok := m[token]; !ok || v == nil {
 		return nil, fmt.Errorf("no schema %q", token)
 	} else if ref := v.Ref; ref != "" {
@@ -259,7 +206,7 @@ func (m Schemas) JSONLookup(token string) (interface{}, error) {
 var _ jsonpointer.JSONPointable = (*ParametersMap)(nil)
 
 // JSONLookup implements https://pkg.go.dev/github.com/go-openapi/jsonpointer#JSONPointable
-func (m ParametersMap) JSONLookup(token string) (interface{}, error) {
+func (m ParametersMap) JSONLookup(token string) (any, error) {
 	if v, ok := m[token]; !ok || v == nil {
 		return nil, fmt.Errorf("no parameter %q", token)
 	} else if ref := v.Ref; ref != "" {
@@ -272,7 +219,7 @@ func (m ParametersMap) JSONLookup(token string) (interface{}, error) {
 var _ jsonpointer.JSONPointable = (*Headers)(nil)
 
 // JSONLookup implements https://pkg.go.dev/github.com/go-openapi/jsonpointer#JSONPointable
-func (m Headers) JSONLookup(token string) (interface{}, error) {
+func (m Headers) JSONLookup(token string) (any, error) {
 	if v, ok := m[token]; !ok || v == nil {
 		return nil, fmt.Errorf("no header %q", token)
 	} else if ref := v.Ref; ref != "" {
@@ -285,7 +232,7 @@ func (m Headers) JSONLookup(token string) (interface{}, error) {
 var _ jsonpointer.JSONPointable = (*RequestBodyRef)(nil)
 
 // JSONLookup implements https://pkg.go.dev/github.com/go-openapi/jsonpointer#JSONPointable
-func (m RequestBodies) JSONLookup(token string) (interface{}, error) {
+func (m RequestBodies) JSONLookup(token string) (any, error) {
 	if v, ok := m[token]; !ok || v == nil {
 		return nil, fmt.Errorf("no request body %q", token)
 	} else if ref := v.Ref; ref != "" {
@@ -298,7 +245,7 @@ func (m RequestBodies) JSONLookup(token string) (interface{}, error) {
 var _ jsonpointer.JSONPointable = (*ResponseRef)(nil)
 
 // JSONLookup implements https://pkg.go.dev/github.com/go-openapi/jsonpointer#JSONPointable
-func (m ResponseBodies) JSONLookup(token string) (interface{}, error) {
+func (m ResponseBodies) JSONLookup(token string) (any, error) {
 	if v, ok := m[token]; !ok || v == nil {
 		return nil, fmt.Errorf("no response body %q", token)
 	} else if ref := v.Ref; ref != "" {
@@ -311,7 +258,7 @@ func (m ResponseBodies) JSONLookup(token string) (interface{}, error) {
 var _ jsonpointer.JSONPointable = (*SecuritySchemes)(nil)
 
 // JSONLookup implements https://pkg.go.dev/github.com/go-openapi/jsonpointer#JSONPointable
-func (m SecuritySchemes) JSONLookup(token string) (interface{}, error) {
+func (m SecuritySchemes) JSONLookup(token string) (any, error) {
 	if v, ok := m[token]; !ok || v == nil {
 		return nil, fmt.Errorf("no security scheme body %q", token)
 	} else if ref := v.Ref; ref != "" {
@@ -324,7 +271,7 @@ func (m SecuritySchemes) JSONLookup(token string) (interface{}, error) {
 var _ jsonpointer.JSONPointable = (*Examples)(nil)
 
 // JSONLookup implements https://pkg.go.dev/github.com/go-openapi/jsonpointer#JSONPointable
-func (m Examples) JSONLookup(token string) (interface{}, error) {
+func (m Examples) JSONLookup(token string) (any, error) {
 	if v, ok := m[token]; !ok || v == nil {
 		return nil, fmt.Errorf("no example body %q", token)
 	} else if ref := v.Ref; ref != "" {
@@ -337,7 +284,7 @@ func (m Examples) JSONLookup(token string) (interface{}, error) {
 var _ jsonpointer.JSONPointable = (*Links)(nil)
 
 // JSONLookup implements https://pkg.go.dev/github.com/go-openapi/jsonpointer#JSONPointable
-func (m Links) JSONLookup(token string) (interface{}, error) {
+func (m Links) JSONLookup(token string) (any, error) {
 	if v, ok := m[token]; !ok || v == nil {
 		return nil, fmt.Errorf("no link body %q", token)
 	} else if ref := v.Ref; ref != "" {
@@ -350,7 +297,7 @@ func (m Links) JSONLookup(token string) (interface{}, error) {
 var _ jsonpointer.JSONPointable = (*Callbacks)(nil)
 
 // JSONLookup implements https://pkg.go.dev/github.com/go-openapi/jsonpointer#JSONPointable
-func (m Callbacks) JSONLookup(token string) (interface{}, error) {
+func (m Callbacks) JSONLookup(token string) (any, error) {
 	if v, ok := m[token]; !ok || v == nil {
 		return nil, fmt.Errorf("no callback body %q", token)
 	} else if ref := v.Ref; ref != "" {

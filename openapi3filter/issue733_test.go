@@ -2,7 +2,6 @@ package openapi3filter_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"math"
 	"math/big"
@@ -65,7 +64,7 @@ paths:
 		require.NoError(t, err)
 
 		err = openapi3filter.ValidateRequest(
-			context.Background(),
+			t.Context(),
 			&openapi3filter.RequestValidationInput{
 				Request:    req,
 				PathParams: pathParams,
@@ -76,7 +75,7 @@ paths:
 
 			dec := json.NewDecoder(req.Body)
 			dec.UseNumber()
-			var jsonAfter map[string]interface{}
+			var jsonAfter map[string]any
 			err = dec.Decode(&jsonAfter)
 			require.NoError(t, err)
 

@@ -2,7 +2,6 @@ package openapi3filter_test
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -17,6 +16,11 @@ import (
 )
 
 func TestValidateZipFileUpload(t *testing.T) {
+	openapi3filter.RegisterBodyDecoder("application/zip", openapi3filter.ZipFileBodyDecoder)
+	t.Cleanup(func() {
+		openapi3filter.UnregisterBodyDecoder("application/zip")
+	})
+
 	const spec = `
 openapi: 3.0.0
 info:
@@ -37,6 +41,9 @@ paths:
                 file:
                   type: string
                   format: binary
+            encoding:
+              file:
+                contentType: application/zip
       responses:
         '200':
           description: Created
@@ -96,7 +103,7 @@ paths:
 		require.NoError(t, err)
 
 		if err = openapi3filter.ValidateRequestBody(
-			context.Background(),
+			t.Context(),
 			&openapi3filter.RequestValidationInput{
 				Request:    req,
 				PathParams: pathParams,

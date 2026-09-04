@@ -6,19 +6,19 @@ import (
 )
 
 func parseMediaType(contentType string) string {
-	i := strings.IndexByte(contentType, ';')
-	if i < 0 {
+	before, _, ok := strings.Cut(contentType, ";")
+	if !ok {
 		return contentType
 	}
-	return contentType[:i]
+	return before
 }
 
-func isNilValue(value interface{}) bool {
+func isNilValue(value any) bool {
 	if value == nil {
 		return true
 	}
 	switch reflect.TypeOf(value).Kind() {
-	case reflect.Ptr, reflect.Map, reflect.Array, reflect.Chan, reflect.Slice:
+	case reflect.Pointer, reflect.Map, reflect.Array, reflect.Chan, reflect.Slice:
 		return reflect.ValueOf(value).IsNil()
 	}
 	return false

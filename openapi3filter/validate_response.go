@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -20,9 +20,7 @@ import (
 // Note: One can tune the behavior of uniqueItems: true verification
 // by registering a custom function with openapi3.RegisterArrayUniqueItemsChecker
 func ValidateResponse(ctx context.Context, input *ResponseValidationInput) error {
-	req := input.RequestValidationInput.Request
-	switch req.Method {
-	case "HEAD":
+	if req := input.RequestValidationInput.Request; req.Method == http.MethodHead {
 		return nil
 	}
 	status := input.Status
@@ -63,7 +61,7 @@ func ValidateResponse(ctx context.Context, input *ResponseValidationInput) error
 		return &ResponseError{Input: input, Reason: "response has not been resolved"}
 	}
 
-	opts := make([]openapi3.SchemaValidationOption, 0, 3) // 3 potential options here
+	var opts []openapi3.SchemaValidationOption
 	if options.MultiError {
 		opts = append(opts, openapi3.MultiErrors())
 	}
@@ -73,6 +71,11 @@ func ValidateResponse(ctx context.Context, input *ResponseValidationInput) error
 	if options.ExcludeWriteOnlyValidations {
 		opts = append(opts, openapi3.DisableWriteOnlyValidation())
 	}
+	// Append additional schema validation options (e.g., document-scoped format validators)
+	opts = append(opts, options.SchemaValidationOptions...)
+	if route.Spec.IsOpenAPI31OrLater() {
+		opts = append(opts, openapi3.EnableJSONSchema2020())
+	}
 
 	headers := make([]string, 0, len(response.Headers))
 	for k := range response.Headers {
@@ -80,7 +83,7 @@ func ValidateResponse(ctx context.Context, input *ResponseValidationInput) error
 			headers = append(headers, k)
 		}
 	}
-	sort.Strings(headers)
+	slices.Sort(headers)
 	for _, headerName := range headers {
 		headerRef := response.Headers[headerName]
 		if err := validateResponseHeader(headerName, headerRef, input, opts); err != nil {
@@ -94,7 +97,7 @@ func ValidateResponse(ctx context.Context, input *ResponseValidationInput) error
 	}
 
 	content := response.Content
-	if len(content) == 0 || options.ExcludeResponseBody {
+	if len(content) == 0 {
 		// An operation does not contains a validation schema for responses with this status code.
 		return nil
 	}
@@ -162,7 +165,7 @@ func ValidateResponse(ctx context.Context, input *ResponseValidationInput) error
 
 func validateResponseHeader(headerName string, headerRef *openapi3.HeaderRef, input *ResponseValidationInput, opts []openapi3.SchemaValidationOption) error {
 	var err error
-	var decodedValue interface{}
+	var decodedValue any
 	var found bool
 	var sm *openapi3.SerializationMethod
 	dec := &headerParamDecoder{header: input.Header}

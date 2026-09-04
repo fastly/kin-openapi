@@ -1,7 +1,6 @@
 package routers_test
 
 import (
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -62,11 +61,11 @@ paths:
 
 		``: true,
 	} {
-		loader := &openapi3.Loader{Context: context.Background()}
+		loader := &openapi3.Loader{Context: t.Context()}
 		t.Logf("using servers: %q (%v)", servers, expectError)
 		doc, err := loader.LoadFromData(spec(servers))
 		require.NoError(t, err)
-		err = doc.Validate(context.Background())
+		err = doc.Validate(t.Context())
 		require.NoError(t, err)
 		gorillamuxNewRouterWrapped := func(doc *openapi3.T, opts ...openapi3.ValidationOption) (routers.Router, error) {
 			return gorillamux.NewRouter(doc)
@@ -95,7 +94,7 @@ paths:
 					PathParams: pathParams,
 					Route:      route,
 				}
-				err = openapi3filter.ValidateRequest(context.Background(), requestValidationInput)
+				err = openapi3filter.ValidateRequest(t.Context(), requestValidationInput)
 				require.NoError(t, err)
 			}
 
@@ -105,7 +104,8 @@ paths:
 					route, pathParams, err := router.FindRoute(r)
 					if err != nil {
 						w.WriteHeader(http.StatusInternalServerError)
-						w.Write([]byte(err.Error()))
+						_, err := w.Write([]byte(err.Error()))
+						require.NoError(t, err)
 						return
 					}
 
@@ -118,7 +118,8 @@ paths:
 					require.NoError(t, err)
 
 					w.Header().Set("Content-Type", "application/json")
-					w.Write([]byte("{}"))
+					_, err = w.Write([]byte("{}"))
+					require.NoError(t, err)
 				}))
 				defer ts.Close()
 

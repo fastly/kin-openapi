@@ -3,13 +3,14 @@ package openapi2
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
 type PathItem struct {
-	Extensions map[string]interface{} `json:"-" yaml:"-"`
+	Extensions map[string]any `json:"-" yaml:"-"`
 
 	Ref string `json:"$ref,omitempty" yaml:"$ref,omitempty"`
 
@@ -29,10 +30,8 @@ func (pathItem PathItem) MarshalJSON() ([]byte, error) {
 		return json.Marshal(openapi3.Ref{Ref: ref})
 	}
 
-	m := make(map[string]interface{}, 8+len(pathItem.Extensions))
-	for k, v := range pathItem.Extensions {
-		m[k] = v
-	}
+	m := make(map[string]any, 8+len(pathItem.Extensions))
+	maps.Copy(m, pathItem.Extensions)
 	if x := pathItem.Delete; x != nil {
 		m["delete"] = x
 	}
@@ -127,7 +126,7 @@ func (pathItem *PathItem) GetOperation(method string) *Operation {
 	case http.MethodPut:
 		return pathItem.Put
 	default:
-		panic(fmt.Errorf("unsupported HTTP method %q", method))
+		return nil
 	}
 }
 

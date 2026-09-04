@@ -1,0 +1,48 @@
+invalid components: schema "GetProfitAndLossResponse": invalid anyOf element: invalid example: Error at "/type": property "type" is missing
+Schema:
+  {
+    "example": {
+      "total": 200000
+    },
+    "properties": {
+      "id": {
+        "example": "123abc",
+        "nullable": true,
+        "type": "string"
+      },
+      "records": {
+        "$ref": "#/components/schemas/ProfitAndLossRecords"
+      },
+      "title": {
+        "example": "Income",
+        "nullable": true,
+        "type": "string"
+      },
+      "total": {
+        "example": 23992.34,
+        "nullable": true,
+        "type": "number"
+      },
+      "type": {
+        "example": "Section",
+        "type": "string"
+      }
+    },
+    "required": [
+      "type"
+    ],
+    "type": "object",
+    "x-apideck-schema-id": "ProfitAndLossSection",
+    "x-apideck-weights": {
+      "id": "medium",
+      "records": "medium",
+      "title": "medium",
+      "total": "medium",
+      "type": "critical"
+    }
+  }
+
+Value:
+  {
+    "total": 200000
+  }

@@ -1,10 +1,13 @@
 package openapi2conv
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
+	"maps"
+	"net/http"
 	"net/url"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi2"
@@ -28,7 +31,7 @@ func ToV3WithLoader(doc2 *openapi2.T, loader *openapi3.Loader, location *url.URL
 
 	if host := doc2.Host; host != "" {
 		if strings.Contains(host, "/") {
-			err := fmt.Errorf("invalid host %q. This MUST be the host only and does not include the scheme nor sub-paths.", host)
+			err := fmt.Errorf("invalid host %q. This MUST be the host only and does not include the scheme nor sub-paths", host)
 			return nil, err
 		}
 		schemes := doc2.Schemes
@@ -92,9 +95,7 @@ func ToV3WithLoader(doc2 *openapi2.T, loader *openapi3.Loader, location *url.URL
 		}
 	}
 
-	for key, schema := range ToV3Schemas(doc2.Definitions) {
-		doc3.Components.Schemas[key] = schema
-	}
+	maps.Copy(doc3.Components.Schemas, ToV3Schemas(doc2.Definitions))
 
 	if m := doc2.SecurityDefinitions; len(m) != 0 {
 		doc3SecuritySchemes := make(map[string]*openapi3.SecuritySchemeRef)
@@ -122,7 +123,7 @@ func ToV3PathItem(doc2 *openapi2.T, components *openapi3.Components, pathItem *o
 		Extensions: stripNonExtensions(pathItem.Extensions),
 	}
 	for method, operation := range pathItem.Operations() {
-		doc3Operation, err := ToV3Operation(doc2, components, pathItem, operation, consumes)
+		doc3Operation, err := ToV3Operation(components, pathItem, operation, consumes)
 		if err != nil {
 			return nil, err
 		}
@@ -144,17 +145,18 @@ func ToV3PathItem(doc2 *openapi2.T, components *openapi3.Components, pathItem *o
 	return doc3, nil
 }
 
-func ToV3Operation(doc2 *openapi2.T, components *openapi3.Components, pathItem *openapi2.PathItem, operation *openapi2.Operation, consumes []string) (*openapi3.Operation, error) {
+func ToV3Operation(components *openapi3.Components, pathItem *openapi2.PathItem, operation *openapi2.Operation, consumes []string) (*openapi3.Operation, error) {
 	if operation == nil {
 		return nil, nil
 	}
 	doc3 := &openapi3.Operation{
-		OperationID: operation.OperationID,
-		Summary:     operation.Summary,
-		Description: operation.Description,
-		Deprecated:  operation.Deprecated,
-		Tags:        operation.Tags,
-		Extensions:  stripNonExtensions(operation.Extensions),
+		OperationID:  operation.OperationID,
+		Summary:      operation.Summary,
+		Description:  operation.Description,
+		Deprecated:   operation.Deprecated,
+		Tags:         operation.Tags,
+		Extensions:   stripNonExtensions(operation.Extensions),
+		ExternalDocs: operation.ExternalDocs,
 	}
 	if v := operation.Security; v != nil {
 		doc3Security := ToV3SecurityRequirements(*v)
@@ -175,9 +177,7 @@ func ToV3Operation(doc2 *openapi2.T, components *openapi3.Components, pathItem *
 		case v3RequestBody != nil:
 			reqBodies = append(reqBodies, v3RequestBody)
 		case v3SchemaMap != nil:
-			for key, v3Schema := range v3SchemaMap {
-				formDataSchemas[key] = v3Schema
-			}
+			maps.Copy(formDataSchemas, v3SchemaMap)
 		default:
 			doc3.Parameters = append(doc3.Parameters, v3Parameter)
 		}
@@ -236,7 +236,7 @@ func ToV3Parameter(components *openapi3.Components, parameter *openapi2.Paramete
 		}
 		if parameter.Name != "" {
 			if result.Extensions == nil {
-				result.Extensions = make(map[string]interface{}, 1)
+				result.Extensions = make(map[string]any, 1)
 			}
 			result.Extensions["x-originalParamName"] = parameter.Name
 		}
@@ -248,11 +248,11 @@ func ToV3Parameter(components *openapi3.Components, parameter *openapi2.Paramete
 
 	case "formData":
 		format, typ := parameter.Format, parameter.Type
-		if typ == "file" {
-			format, typ = "binary", "string"
+		if typ.Is("file") {
+			format, typ = "binary", &openapi3.Types{"string"}
 		}
 		if parameter.Extensions == nil {
-			parameter.Extensions = make(map[string]interface{}, 1)
+			parameter.Extensions = make(map[string]any, 1)
 		}
 		parameter.Extensions["x-formData-name"] = parameter.Name
 		var required []string
@@ -267,12 +267,11 @@ func ToV3Parameter(components *openapi3.Components, parameter *openapi2.Paramete
 			Enum:            parameter.Enum,
 			Min:             parameter.Minimum,
 			Max:             parameter.Maximum,
-			ExclusiveMin:    parameter.ExclusiveMin,
-			ExclusiveMax:    parameter.ExclusiveMax,
+			ExclusiveMin:    openapi3.ExclusiveBound{Bool: boolPtr(parameter.ExclusiveMin)},
+			ExclusiveMax:    openapi3.ExclusiveBound{Bool: boolPtr(parameter.ExclusiveMax)},
 			MinLength:       parameter.MinLength,
 			MaxLength:       parameter.MaxLength,
 			Default:         parameter.Default,
-			Items:           parameter.Items,
 			MinItems:        parameter.MinItems,
 			MaxItems:        parameter.MaxItems,
 			Pattern:         parameter.Pattern,
@@ -281,6 +280,10 @@ func ToV3Parameter(components *openapi3.Components, parameter *openapi2.Paramete
 			MultipleOf:      parameter.MultipleOf,
 			Required:        required,
 		}}
+		if parameter.Items != nil {
+			schemaRef.Value.Items = ToV3SchemaRef(parameter.Items)
+		}
+
 		schemaRefMap := make(map[string]*openapi3.SchemaRef, 1)
 		schemaRefMap[parameter.Name] = schemaRef
 		return nil, nil, schemaRefMap, nil
@@ -301,7 +304,7 @@ func ToV3Parameter(components *openapi3.Components, parameter *openapi2.Paramete
 			Description: parameter.Description,
 			Required:    required,
 			Extensions:  stripNonExtensions(parameter.Extensions),
-			Schema: ToV3SchemaRef(&openapi3.SchemaRef{Value: &openapi3.Schema{
+			Schema: ToV3SchemaRef(&openapi2.SchemaRef{Value: &openapi2.Schema{
 				Type:            parameter.Type,
 				Format:          parameter.Format,
 				Enum:            parameter.Enum,
@@ -346,9 +349,10 @@ func formDataBody(bodies map[string]*openapi3.SchemaRef, reqs map[string]bool, c
 			bodies[s] = ref
 		}
 	}
+	slices.Sort(requireds)
 	schema := &openapi3.Schema{
-		Type:       "object",
-		Properties: ToV3Schemas(bodies),
+		Type:       &openapi3.Types{"object"},
+		Properties: bodies,
 		Required:   requireds,
 	}
 	return &openapi3.RequestBodyRef{
@@ -455,7 +459,7 @@ func ToV3Headers(defs map[string]*openapi2.Header) openapi3.Headers {
 	return headers
 }
 
-func ToV3Schemas(defs map[string]*openapi3.SchemaRef) map[string]*openapi3.SchemaRef {
+func ToV3Schemas(defs map[string]*openapi2.SchemaRef) map[string]*openapi3.SchemaRef {
 	schemas := make(map[string]*openapi3.SchemaRef, len(defs))
 	for name, schema := range defs {
 		schemas[name] = ToV3SchemaRef(schema)
@@ -463,31 +467,116 @@ func ToV3Schemas(defs map[string]*openapi3.SchemaRef) map[string]*openapi3.Schem
 	return schemas
 }
 
-func ToV3SchemaRef(schema *openapi3.SchemaRef) *openapi3.SchemaRef {
+func ToV3SchemaRef(schema *openapi2.SchemaRef) *openapi3.SchemaRef {
+	if schema == nil {
+		return &openapi3.SchemaRef{}
+	}
+
 	if ref := schema.Ref; ref != "" {
 		return &openapi3.SchemaRef{Ref: ToV3Ref(ref)}
 	}
+
 	if schema.Value == nil {
-		return schema
-	}
-	if schema.Value.Items != nil {
-		schema.Value.Items = ToV3SchemaRef(schema.Value.Items)
-	}
-	for k, v := range schema.Value.Properties {
-		schema.Value.Properties[k] = ToV3SchemaRef(v)
-	}
-	if v := schema.Value.AdditionalProperties.Schema; v != nil {
-		schema.Value.AdditionalProperties.Schema = ToV3SchemaRef(v)
-	}
-	for i, v := range schema.Value.AllOf {
-		schema.Value.AllOf[i] = ToV3SchemaRef(v)
-	}
-	if val, ok := schema.Value.Extensions["x-nullable"]; ok {
-		schema.Value.Nullable, _ = val.(bool)
-		delete(schema.Value.Extensions, "x-nullable")
+		return &openapi3.SchemaRef{
+			Extensions: schema.Extensions,
+		}
 	}
 
-	return schema
+	v3Schema := &openapi3.Schema{
+		Extensions:           schema.Value.Extensions,
+		Type:                 schema.Value.Type,
+		Title:                schema.Value.Title,
+		Format:               schema.Value.Format,
+		Description:          schema.Value.Description,
+		Enum:                 schema.Value.Enum,
+		Default:              schema.Value.Default,
+		Example:              schema.Value.Example,
+		ExternalDocs:         schema.Value.ExternalDocs,
+		UniqueItems:          schema.Value.UniqueItems,
+		ExclusiveMin:         openapi3.ExclusiveBound{Bool: boolPtr(schema.Value.ExclusiveMin)},
+		ExclusiveMax:         openapi3.ExclusiveBound{Bool: boolPtr(schema.Value.ExclusiveMax)},
+		ReadOnly:             schema.Value.ReadOnly,
+		WriteOnly:            schema.Value.WriteOnly,
+		AllowEmptyValue:      schema.Value.AllowEmptyValue,
+		Deprecated:           schema.Value.Deprecated,
+		XML:                  schema.Value.XML,
+		Min:                  schema.Value.Min,
+		Max:                  schema.Value.Max,
+		MultipleOf:           schema.Value.MultipleOf,
+		MinLength:            schema.Value.MinLength,
+		MaxLength:            schema.Value.MaxLength,
+		Pattern:              schema.Value.Pattern,
+		MinItems:             schema.Value.MinItems,
+		MaxItems:             schema.Value.MaxItems,
+		Required:             schema.Value.Required,
+		MinProps:             schema.Value.MinProps,
+		MaxProps:             schema.Value.MaxProps,
+		AllOf:                make(openapi3.SchemaRefs, len(schema.Value.AllOf)),
+		Properties:           make(openapi3.Schemas),
+		AdditionalProperties: toV3AdditionalProperties(schema.Value.AdditionalProperties),
+	}
+
+	if schema.Value.Discriminator != "" {
+		v3Schema.Discriminator = &openapi3.Discriminator{
+			PropertyName: schema.Value.Discriminator,
+		}
+	}
+
+	if schema.Value.Items != nil {
+		v3Schema.Items = ToV3SchemaRef(schema.Value.Items)
+	}
+	if schema.Value.Type.Is("file") {
+		v3Schema.Format, v3Schema.Type = "binary", &openapi3.Types{"string"}
+	}
+	for k, v := range schema.Value.Properties {
+		v3Schema.Properties[k] = ToV3SchemaRef(v)
+	}
+	for i, v := range schema.Value.AllOf {
+		v3Schema.AllOf[i] = ToV3SchemaRef(v)
+	}
+	if val, ok := v3Schema.Extensions["x-nullable"]; ok {
+		if nullable, valid := val.(bool); valid {
+			v3Schema.Nullable = nullable
+			delete(v3Schema.Extensions, "x-nullable")
+		}
+	}
+
+	return &openapi3.SchemaRef{
+		Extensions: schema.Extensions,
+		Value:      v3Schema,
+	}
+}
+
+func toV3AdditionalProperties(from openapi3.AdditionalProperties) openapi3.AdditionalProperties {
+	return openapi3.AdditionalProperties{
+		Has:    from.Has,
+		Schema: convertRefsInV3SchemaRef(from.Schema),
+	}
+}
+
+func convertRefsInV3SchemaRef(from *openapi3.SchemaRef) *openapi3.SchemaRef {
+	if from == nil {
+		return nil
+	}
+	to := *from
+	to.Ref = ToV3Ref(to.Ref)
+	if to.Value != nil {
+		v := *from.Value
+		to.Value = &v
+		if to.Value.Items != nil {
+			to.Value.Items.Ref = ToV3Ref(to.Value.Items.Ref)
+		}
+		to.Value.AdditionalProperties = toV3AdditionalProperties(to.Value.AdditionalProperties)
+
+		if len(to.Value.AllOf) > 0 {
+			allOf := make(openapi3.SchemaRefs, len(to.Value.AllOf))
+			for i, schemaRef := range to.Value.AllOf {
+				allOf[i] = convertRefsInV3SchemaRef(schemaRef)
+			}
+			to.Value.AllOf = allOf
+		}
+	}
+	return &to
 }
 
 var ref2To3 = map[string]string{
@@ -548,9 +637,7 @@ func ToV3SecurityScheme(securityScheme *openapi2.SecurityScheme) (*openapi3.Secu
 		flows := &openapi3.OAuthFlows{}
 		result.Flows = flows
 		scopesMap := make(map[string]string)
-		for scope, desc := range securityScheme.Scopes {
-			scopesMap[scope] = desc
-		}
+		maps.Copy(scopesMap, securityScheme.Scopes)
 		flow := &openapi3.OAuthFlow{
 			AuthorizationURL: securityScheme.AuthorizationURL,
 			TokenURL:         securityScheme.TokenURL,
@@ -597,12 +684,11 @@ func FromV3(doc3 *openapi3.T) (*openapi2.T, error) {
 	isHTTP := false
 	servers := doc3.Servers
 	for i, server := range servers {
-		parsedURL, err := url.Parse(server.URL)
-		if err == nil {
-			// See which schemes seem to be supported
-			if parsedURL.Scheme == "https" {
+		if parsedURL, err := url.Parse(server.URL); err == nil {
+			switch parsedURL.Scheme {
+			case "https":
 				isHTTPS = true
-			} else if parsedURL.Scheme == "http" {
+			case "http":
 				isHTTP = true
 			}
 			// The first server is assumed to provide the base path
@@ -630,6 +716,9 @@ func FromV3(doc3 *openapi3.T) (*openapi2.T, error) {
 			if operation == nil {
 				continue
 			}
+			if err := checkV2Method(method); err != nil {
+				return nil, fmt.Errorf("path %q: %w", path, err)
+			}
 			doc2Operation, err := FromV3Operation(doc3, operation)
 			if err != nil {
 				return nil, err
@@ -644,7 +733,7 @@ func FromV3(doc3 *openapi3.T) (*openapi2.T, error) {
 			}
 			params = append(params, p)
 		}
-		sort.Sort(params)
+		slices.SortFunc(params, compareParameters)
 		doc2.Paths[path].Parameters = params
 	}
 
@@ -677,7 +766,7 @@ func FromV3(doc3 *openapi3.T) (*openapi2.T, error) {
 	if m := doc3.Components.SecuritySchemes; m != nil {
 		doc2SecuritySchemes := make(map[string]*openapi2.SecurityScheme)
 		for id, securityScheme := range m {
-			v, err := FromV3SecurityScheme(doc3, securityScheme)
+			v, err := FromV3SecurityScheme(securityScheme)
 			if err != nil {
 				return nil, err
 			}
@@ -695,7 +784,7 @@ func consumesToArray(consumes map[string]struct{}) []string {
 	for key := range consumes {
 		consumesArr = append(consumesArr, key)
 	}
-	sort.Strings(consumesArr)
+	slices.Sort(consumesArr)
 	return consumesArr
 }
 
@@ -738,8 +827,8 @@ func fromV3RequestBodies(name string, requestBodyRef *openapi3.RequestBodyRef, c
 	return
 }
 
-func FromV3Schemas(schemas map[string]*openapi3.SchemaRef, components *openapi3.Components) (map[string]*openapi3.SchemaRef, map[string]*openapi2.Parameter) {
-	v2Defs := make(map[string]*openapi3.SchemaRef)
+func FromV3Schemas(schemas map[string]*openapi3.SchemaRef, components *openapi3.Components) (map[string]*openapi2.SchemaRef, map[string]*openapi2.Parameter) {
+	v2Defs := make(map[string]*openapi2.SchemaRef)
 	v2Params := make(map[string]*openapi2.Parameter)
 	for name, schema := range schemas {
 		schemaConv, parameterConv := FromV3SchemaRef(schema, components)
@@ -755,49 +844,55 @@ func FromV3Schemas(schemas map[string]*openapi3.SchemaRef, components *openapi3.
 	return v2Defs, v2Params
 }
 
-func FromV3SchemaRef(schema *openapi3.SchemaRef, components *openapi3.Components) (*openapi3.SchemaRef, *openapi2.Parameter) {
+func FromV3SchemaRef(schema *openapi3.SchemaRef, components *openapi3.Components) (*openapi2.SchemaRef, *openapi2.Parameter) {
 	if ref := schema.Ref; ref != "" {
+		// FromV3RequestBodyFormData (and other recursive call sites in
+		// this file) pass components=nil when recursing into array
+		// items and nested refs. Without guarding, components.Schemas
+		// nil-derefs before we even have a chance to look up the
+		// component, so a ref like '#/components/schemas/CreateEmbeddingRequest'
+		// inside an array schema crashes the converter (#1062).
+		// Treat a missing components table the same as 'the target
+		// schema is not known locally': emit a plain $ref and move on.
 		name := getParameterNameFromNewRef(ref)
-		if val, ok := components.Schemas[name]; ok {
-			if val.Value.Format == "binary" {
-				v2Ref := strings.Replace(ref, "#/components/schemas/", "#/parameters/", 1)
-				return nil, &openapi2.Parameter{Ref: v2Ref}
+		if components != nil {
+			if val, ok := components.Schemas[name]; ok {
+				if val.Value.Format == "binary" {
+					v2Ref := strings.Replace(ref, "#/components/schemas/", "#/parameters/", 1)
+					return nil, &openapi2.Parameter{Ref: v2Ref}
+				}
 			}
 		}
 
-		return &openapi3.SchemaRef{Ref: FromV3Ref(ref)}, nil
+		return &openapi2.SchemaRef{Ref: FromV3Ref(ref)}, nil
 	}
 	if schema.Value == nil {
-		return schema, nil
+		return &openapi2.SchemaRef{
+			Extensions: schema.Extensions,
+		}, nil
 	}
 
 	if schema.Value != nil {
-		if schema.Value.Type == "string" && schema.Value.Format == "binary" {
-			paramType := "file"
-			required := false
+		if schema.Value.Type.Is("string") && schema.Value.Format == "binary" {
+			paramType := &openapi3.Types{"file"}
 
-			value, _ := schema.Value.Extensions["x-formData-name"]
+			value := schema.Value.Extensions["x-formData-name"]
 			originalName, _ := value.(string)
-			for _, prop := range schema.Value.Required {
-				if originalName == prop {
-					required = true
-					break
-				}
-			}
+			required := slices.Contains(schema.Value.Required, originalName)
 			return nil, &openapi2.Parameter{
-				In:              "formData",
-				Name:            originalName,
-				Description:     schema.Value.Description,
-				Type:            paramType,
-				Enum:            schema.Value.Enum,
-				Minimum:         schema.Value.Min,
-				Maximum:         schema.Value.Max,
-				ExclusiveMin:    schema.Value.ExclusiveMin,
-				ExclusiveMax:    schema.Value.ExclusiveMax,
-				MinLength:       schema.Value.MinLength,
-				MaxLength:       schema.Value.MaxLength,
-				Default:         schema.Value.Default,
-				Items:           schema.Value.Items,
+				In:           "formData",
+				Name:         originalName,
+				Description:  schema.Value.Description,
+				Type:         paramType,
+				Enum:         schema.Value.Enum,
+				Minimum:      effectiveMin(schema.Value.Min, schema.Value.ExclusiveMin),
+				Maximum:      effectiveMax(schema.Value.Max, schema.Value.ExclusiveMax),
+				ExclusiveMin: exclusiveBoundToBool(schema.Value.ExclusiveMin),
+				ExclusiveMax: exclusiveBoundToBool(schema.Value.ExclusiveMax),
+				MinLength:    schema.Value.MinLength,
+				MaxLength:    schema.Value.MaxLength,
+				Default:      schema.Value.Default,
+				// Items:           schema.Value.Items,
 				MinItems:        schema.Value.MinItems,
 				MaxItems:        schema.Value.MaxItems,
 				AllowEmptyValue: schema.Value.AllowEmptyValue,
@@ -808,32 +903,72 @@ func FromV3SchemaRef(schema *openapi3.SchemaRef, components *openapi3.Components
 			}
 		}
 	}
-	if v := schema.Value.Items; v != nil {
-		schema.Value.Items, _ = FromV3SchemaRef(v, components)
+
+	v2Schema := &openapi2.Schema{
+		Extensions:           schema.Value.Extensions,
+		Type:                 schema.Value.Type,
+		Title:                schema.Value.Title,
+		Format:               schema.Value.Format,
+		Description:          schema.Value.Description,
+		Enum:                 schema.Value.Enum,
+		Default:              schema.Value.Default,
+		Example:              schema.Value.Example,
+		ExternalDocs:         schema.Value.ExternalDocs,
+		UniqueItems:          schema.Value.UniqueItems,
+		ExclusiveMin:         exclusiveBoundToBool(schema.Value.ExclusiveMin),
+		ExclusiveMax:         exclusiveBoundToBool(schema.Value.ExclusiveMax),
+		ReadOnly:             schema.Value.ReadOnly,
+		WriteOnly:            schema.Value.WriteOnly,
+		AllowEmptyValue:      schema.Value.AllowEmptyValue,
+		Deprecated:           schema.Value.Deprecated,
+		XML:                  schema.Value.XML,
+		Min:                  effectiveMin(schema.Value.Min, schema.Value.ExclusiveMin),
+		Max:                  effectiveMax(schema.Value.Max, schema.Value.ExclusiveMax),
+		MultipleOf:           schema.Value.MultipleOf,
+		MinLength:            schema.Value.MinLength,
+		MaxLength:            schema.Value.MaxLength,
+		Pattern:              schema.Value.Pattern,
+		MinItems:             schema.Value.MinItems,
+		MaxItems:             schema.Value.MaxItems,
+		Required:             schema.Value.Required,
+		MinProps:             schema.Value.MinProps,
+		MaxProps:             schema.Value.MaxProps,
+		Properties:           make(openapi2.Schemas),
+		AllOf:                make(openapi2.SchemaRefs, len(schema.Value.AllOf)),
+		AdditionalProperties: schema.Value.AdditionalProperties,
 	}
+
+	if v := schema.Value.Items; v != nil {
+		v2Schema.Items, _ = FromV3SchemaRef(v, components)
+	}
+
 	keys := make([]string, 0, len(schema.Value.Properties))
 	for k := range schema.Value.Properties {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	for _, key := range keys {
-		schema.Value.Properties[key], _ = FromV3SchemaRef(schema.Value.Properties[key], components)
-	}
-	if v := schema.Value.AdditionalProperties.Schema; v != nil {
-		schema.Value.AdditionalProperties.Schema, _ = FromV3SchemaRef(v, components)
-	}
-	for i, v := range schema.Value.AllOf {
-		schema.Value.AllOf[i], _ = FromV3SchemaRef(v, components)
-	}
-	if schema.Value.Nullable {
-		schema.Value.Nullable = false
-		if schema.Value.Extensions == nil {
-			schema.Value.Extensions = make(map[string]interface{})
+		property, _ := FromV3SchemaRef(schema.Value.Properties[key], components)
+		if property != nil {
+			v2Schema.Properties[key] = property
 		}
-		schema.Value.Extensions["x-nullable"] = true
 	}
 
-	return schema, nil
+	for i, v := range schema.Value.AllOf {
+		v2Schema.AllOf[i], _ = FromV3SchemaRef(v, components)
+	}
+	if schema.Value.PermitsNull() {
+		schema.Value.Nullable = false
+		if schema.Value.Extensions == nil {
+			v2Schema.Extensions = make(map[string]any)
+		}
+		v2Schema.Extensions["x-nullable"] = true
+	}
+
+	return &openapi2.SchemaRef{
+		Extensions: schema.Extensions,
+		Value:      v2Schema,
+	}, nil
 }
 
 func FromV3SecurityRequirements(requirements openapi3.SecurityRequirements) openapi2.SecurityRequirements {
@@ -847,11 +982,37 @@ func FromV3SecurityRequirements(requirements openapi3.SecurityRequirements) open
 	return result
 }
 
+// openapi2Methods are the HTTP methods Swagger 2.0's Path Item Object is able
+// to express. Anything else - the OpenAPI 3.2 QUERY field, CONNECT, TRACE, or a
+// custom method held in additionalOperations - has no v2 counterpart.
+var openapi2Methods = map[string]struct{}{
+	http.MethodDelete:  {},
+	http.MethodGet:     {},
+	http.MethodHead:    {},
+	http.MethodOptions: {},
+	http.MethodPatch:   {},
+	http.MethodPost:    {},
+	http.MethodPut:     {},
+}
+
+// checkV2Method reports whether an operation registered under method can be
+// carried over to a Swagger 2.0 document. Calling openapi2's SetOperation with
+// an unsupported method panics, so callers must guard with this first.
+func checkV2Method(method string) error {
+	if _, ok := openapi2Methods[method]; !ok {
+		return fmt.Errorf("unsupported HTTP method %q: it cannot be expressed in OpenAPI 2.0 (Swagger)", method)
+	}
+	return nil
+}
+
 func FromV3PathItem(doc3 *openapi3.T, pathItem *openapi3.PathItem) (*openapi2.PathItem, error) {
 	result := &openapi2.PathItem{
 		Extensions: stripNonExtensions(pathItem.Extensions),
 	}
 	for method, operation := range pathItem.Operations() {
+		if err := checkV2Method(method); err != nil {
+			return nil, err
+		}
 		r, err := FromV3Operation(doc3, operation)
 		if err != nil {
 			return nil, err
@@ -893,14 +1054,13 @@ func FromV3RequestBodyFormData(mediaType *openapi3.MediaType) openapi2.Parameter
 		val := schemaRef.Value
 		typ := val.Type
 		if val.Format == "binary" {
-			typ = "file"
+			typ = &openapi3.Types{"file"}
 		}
-		required := false
-		for _, name := range val.Required {
-			if name == propName {
-				required = true
-				break
-			}
+		required := slices.Contains(val.Required, propName)
+
+		var v2Items *openapi2.SchemaRef
+		if val.Items != nil {
+			v2Items, _ = FromV3SchemaRef(val.Items, nil)
 		}
 		parameter := &openapi2.Parameter{
 			Name:         propName,
@@ -909,16 +1069,16 @@ func FromV3RequestBodyFormData(mediaType *openapi3.MediaType) openapi2.Parameter
 			In:           "formData",
 			Extensions:   stripNonExtensions(val.Extensions),
 			Enum:         val.Enum,
-			ExclusiveMin: val.ExclusiveMin,
-			ExclusiveMax: val.ExclusiveMax,
+			ExclusiveMin: exclusiveBoundToBool(val.ExclusiveMin),
+			ExclusiveMax: exclusiveBoundToBool(val.ExclusiveMax),
 			MinLength:    val.MinLength,
 			MaxLength:    val.MaxLength,
 			Default:      val.Default,
-			Items:        val.Items,
+			Items:        v2Items,
 			MinItems:     val.MinItems,
 			MaxItems:     val.MaxItems,
-			Maximum:      val.Max,
-			Minimum:      val.Min,
+			Maximum:      effectiveMax(val.Max, val.ExclusiveMax),
+			Minimum:      effectiveMin(val.Min, val.ExclusiveMin),
 			Pattern:      val.Pattern,
 			// CollectionFormat: val.CollectionFormat,
 			// Format:          val.Format,
@@ -937,12 +1097,13 @@ func FromV3Operation(doc3 *openapi3.T, operation *openapi3.Operation) (*openapi2
 		return nil, nil
 	}
 	result := &openapi2.Operation{
-		OperationID: operation.OperationID,
-		Summary:     operation.Summary,
-		Description: operation.Description,
-		Deprecated:  operation.Deprecated,
-		Tags:        operation.Tags,
-		Extensions:  stripNonExtensions(operation.Extensions),
+		OperationID:  operation.OperationID,
+		Summary:      operation.Summary,
+		Description:  operation.Description,
+		Deprecated:   operation.Deprecated,
+		Tags:         operation.Tags,
+		Extensions:   stripNonExtensions(operation.Extensions),
+		ExternalDocs: operation.ExternalDocs,
 	}
 	if v := operation.Security; v != nil {
 		resultSecurity := FromV3SecurityRequirements(*v)
@@ -980,7 +1141,7 @@ func FromV3Operation(doc3 *openapi3.T, operation *openapi3.Operation) (*openapi2
 			result.Consumes = consumesToArray(consumes)
 		}
 	}
-	sort.Sort(result.Parameters)
+	slices.SortFunc(result.Parameters, compareParameters)
 
 	if responses := operation.Responses; responses != nil {
 		resultResponses, err := FromV3Responses(responses.Map(), doc3.Components)
@@ -1025,12 +1186,12 @@ func FromV3Parameter(ref *openapi3.ParameterRef, components *openapi3.Components
 		Extensions:  stripNonExtensions(parameter.Extensions),
 	}
 	if schemaRef := parameter.Schema; schemaRef != nil {
-		schemaRef, _ = FromV3SchemaRef(schemaRef, components)
-		if ref := schemaRef.Ref; ref != "" {
-			result.Schema = &openapi3.SchemaRef{Ref: FromV3Ref(ref)}
+		schemaRefV2, _ := FromV3SchemaRef(schemaRef, components)
+		if ref := schemaRefV2.Ref; ref != "" {
+			result.Schema = &openapi2.SchemaRef{Ref: FromV3Ref(ref)}
 			return result, nil
 		}
-		schema := schemaRef.Value
+		schema := schemaRefV2.Value
 		result.Type = schema.Type
 		result.Format = schema.Format
 		result.Enum = schema.Enum
@@ -1111,7 +1272,7 @@ func FromV3Headers(defs openapi3.Headers, components *openapi3.Components) (map[
 	return headers, nil
 }
 
-func FromV3SecurityScheme(doc3 *openapi3.T, ref *openapi3.SecuritySchemeRef) (*openapi2.SecurityScheme, error) {
+func FromV3SecurityScheme(ref *openapi3.SecuritySchemeRef) (*openapi2.SecurityScheme, error) {
 	securityScheme := ref.Value
 	if securityScheme == nil {
 		return nil, nil
@@ -1168,9 +1329,7 @@ func FromV3SecurityScheme(doc3 *openapi3.T, ref *openapi3.SecuritySchemeRef) (*o
 			}
 
 			result.Scopes = make(map[string]string, len(flow.Scopes))
-			for scope, desc := range flow.Scopes {
-				result.Scopes[scope] = desc
-			}
+			maps.Copy(result.Scopes, flow.Scopes)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported security scheme type %q", securityScheme.Type)
@@ -1184,7 +1343,7 @@ var attemptedBodyParameterNames = []string{
 }
 
 // stripNonExtensions removes invalid extensions: those not prefixed by "x-" and returns them
-func stripNonExtensions(extensions map[string]interface{}) map[string]interface{} {
+func stripNonExtensions(extensions map[string]any) map[string]any {
 	for extName := range extensions {
 		if !strings.HasPrefix(extName, "x-") {
 			delete(extensions, extName)
@@ -1193,7 +1352,7 @@ func stripNonExtensions(extensions map[string]interface{}) map[string]interface{
 	return extensions
 }
 
-func addPathExtensions(doc2 *openapi2.T, path string, extensions map[string]interface{}) {
+func addPathExtensions(doc2 *openapi2.T, path string, extensions map[string]any) {
 	if doc2.Paths == nil {
 		doc2.Paths = make(map[string]*openapi2.PathItem)
 	}
@@ -1203,4 +1362,50 @@ func addPathExtensions(doc2 *openapi2.T, path string, extensions map[string]inte
 		doc2.Paths[path] = pathItem
 	}
 	pathItem.Extensions = extensions
+}
+
+func compareParameters(a, b *openapi2.Parameter) int {
+	if c := cmp.Compare(a.Name, b.Name); c != 0 {
+		return c
+	}
+	if c := cmp.Compare(a.In, b.In); c != 0 {
+		return c
+	}
+	return cmp.Compare(a.Ref, b.Ref)
+}
+
+// boolPtr returns a pointer to a bool, or nil if the value is false (to avoid storing empty values)
+func boolPtr(b bool) *bool {
+	if !b {
+		return nil
+	}
+	return &b
+}
+
+// exclusiveBoundToBool converts an ExclusiveBound to a bool for OpenAPI 2.0 compatibility
+// In OpenAPI 2.0, exclusiveMinimum/exclusiveMaximum are boolean modifiers
+func exclusiveBoundToBool(eb openapi3.ExclusiveBound) bool {
+	if eb.Bool != nil {
+		return *eb.Bool
+	}
+	// If it's a number (OpenAPI 3.1 style), we return true to indicate exclusivity
+	return eb.Value != nil
+}
+
+// effectiveMin returns the minimum value for OAS 2.0 conversion, considering ExclusiveBound.
+// In OAS 3.1, exclusiveMinimum is a number. In OAS 2.0, it must be in the minimum field.
+func effectiveMin(min *float64, eb openapi3.ExclusiveBound) *float64 {
+	if min != nil {
+		return min
+	}
+	// If OAS 3.1 style numeric exclusive bound with no minimum, use the bound value as minimum
+	return eb.Value
+}
+
+// effectiveMax returns the maximum value for OAS 2.0 conversion, considering ExclusiveBound.
+func effectiveMax(max *float64, eb openapi3.ExclusiveBound) *float64 {
+	if max != nil {
+		return max
+	}
+	return eb.Value
 }

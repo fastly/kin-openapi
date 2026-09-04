@@ -1,14 +1,15 @@
-package openapi3
+package openapi3_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 func TestIssue341(t *testing.T) {
-	sl := NewLoader()
+	sl := openapi3.NewLoader()
 	sl.IsExternalRefsAllowed = true
 	doc, err := sl.LoadFromFile("testdata/main.yaml")
 	require.NoError(t, err)
@@ -34,7 +35,7 @@ func TestIssue341(t *testing.T) {
 	}
 }`, string(bs))
 
-	require.Equal(t, "string", doc.
+	require.Equal(t, &openapi3.Types{"string"}, doc.
 		Paths.Value("/testpath").
 		Get.
 		Responses.Value("200").Value.
@@ -42,13 +43,13 @@ func TestIssue341(t *testing.T) {
 		Schema.Value.
 		Type)
 
-	doc.InternalizeRefs(context.Background(), nil)
+	doc.InternalizeRefs(t.Context(), nil)
 	bs, err = doc.MarshalJSON()
 	require.NoError(t, err)
 	require.JSONEq(t, `{
 		"components": {
 		  "responses": {
-			"testpath_200_response": {
+			"testpath_testpath_200_response": {
 			  "content": {
 				"application/json": {
 				  "schema": {
@@ -70,7 +71,7 @@ func TestIssue341(t *testing.T) {
 			"get": {
 			  "responses": {
 				"200": {
-				  "$ref": "#/components/responses/testpath_200_response"
+				  "$ref": "#/components/responses/testpath_testpath_200_response"
 				}
 			  }
 			}

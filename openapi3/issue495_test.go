@@ -1,9 +1,12 @@
-package openapi3
+package openapi3_test
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 func TestIssue495(t *testing.T) {
@@ -36,7 +39,7 @@ paths:
                     $ref: '#/components/schemas/schemaArray'
 `[1:])
 
-		sl := NewLoader()
+		sl := openapi3.NewLoader()
 
 		doc, err := sl.LoadFromData(spec)
 		require.NoError(t, err)
@@ -73,7 +76,7 @@ paths:
                     $ref: '#/components/schemas/schemaArray'
 `[1:])
 
-	sl := NewLoader()
+	sl := openapi3.NewLoader()
 
 	doc, err := sl.LoadFromData(spec)
 	require.NoError(t, err)
@@ -81,7 +84,7 @@ paths:
 	err = doc.Validate(sl.Context)
 	require.NoError(t, err)
 
-	require.Equal(t, &Schema{Type: "object"}, doc.Components.Schemas["schemaArray"].Value.Items.Value)
+	require.Equal(t, &openapi3.Schema{Type: &openapi3.Types{"object"}}, doc.Components.Schemas["schemaArray"].Value.Items.Value)
 }
 
 func TestIssue495WithDraft04(t *testing.T) {
@@ -110,13 +113,20 @@ paths:
                 $ref: http://json-schema.org/draft-04/schema
 `[1:])
 
-	sl := NewLoader()
+	sl := openapi3.NewLoader()
 	sl.IsExternalRefsAllowed = true
+
+	if os.Getenv("CI") == "true" {
+		t.Skip("Running in CI: skipping so we avoid 403 error from remote schema server")
+	}
 
 	doc, err := sl.LoadFromData(spec)
 	require.NoError(t, err)
 
-	err = doc.Validate(sl.Context)
+	// draft-04 meta-schema contains $id and $schema; in OAS 3.0 these require
+	// opt-in via AllowExtraSiblingFields so the test can assert its real target
+	// (the unresolved inner "#" ref).
+	err = doc.Validate(sl.Context, openapi3.AllowExtraSiblingFields("$id", "$schema"))
 	require.ErrorContains(t, err, `found unresolved ref: "#"`)
 }
 
@@ -146,12 +156,15 @@ paths:
                 $ref: testdata/draft04.yml
 `[1:])
 
-	sl := NewLoader()
+	sl := openapi3.NewLoader()
 	sl.IsExternalRefsAllowed = true
 
 	doc, err := sl.LoadFromData(spec)
 	require.NoError(t, err)
 
-	err = doc.Validate(sl.Context)
+	// draft-04 meta-schema contains $id and $schema; in OAS 3.0 these require
+	// opt-in via AllowExtraSiblingFields so the test can assert its real target
+	// (the unresolved inner "#" ref).
+	err = doc.Validate(sl.Context, openapi3.AllowExtraSiblingFields("$id", "$schema"))
 	require.ErrorContains(t, err, `found unresolved ref: "#"`)
 }

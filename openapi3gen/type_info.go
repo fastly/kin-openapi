@@ -1,8 +1,9 @@
 package openapi3gen
 
 import (
+	"cmp"
 	"reflect"
-	"sort"
+	"slices"
 	"sync"
 )
 
@@ -19,7 +20,7 @@ type theTypeInfo struct {
 
 // getTypeInfo returns theTypeInfo for the given type.
 func getTypeInfo(t reflect.Type) *theTypeInfo {
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	typeInfosMutex.RLock()
@@ -43,7 +44,9 @@ func getTypeInfo(t reflect.Type) *theTypeInfo {
 		typeInfo.Fields = appendFields(nil, nil, t)
 
 		// Sort fields
-		sort.Sort(sortableFieldInfos(typeInfo.Fields))
+		slices.SortFunc(typeInfo.Fields, func(a, b theFieldInfo) int {
+			return cmp.Compare(a.JSONName, b.JSONName)
+		})
 	}
 
 	// Publish

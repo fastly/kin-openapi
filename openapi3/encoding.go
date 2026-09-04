@@ -3,14 +3,14 @@ package openapi3
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"sort"
+	"maps"
 )
 
 // Encoding is specified by OpenAPI/Swagger 3.0 standard.
 // See https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.0.3.md#encoding-object
 type Encoding struct {
-	Extensions map[string]interface{} `json:"-" yaml:"-"`
+	Extensions map[string]any `json:"-" yaml:"-"`
+	Origin     *Origin        `json:"-" yaml:"-"`
 
 	ContentType   string  `json:"contentType,omitempty" yaml:"contentType,omitempty"`
 	Headers       Headers `json:"headers,omitempty" yaml:"headers,omitempty"`
@@ -22,6 +22,9 @@ type Encoding struct {
 func NewEncoding() *Encoding {
 	return &Encoding{}
 }
+
+// Encodings is a map of encoding objects keyed by field name.
+type Encodings map[string]*Encoding
 
 func (encoding *Encoding) WithHeader(name string, header *Header) *Encoding {
 	return encoding.WithHeaderRef(name, &HeaderRef{
@@ -41,10 +44,17 @@ func (encoding *Encoding) WithHeaderRef(name string, ref *HeaderRef) *Encoding {
 
 // MarshalJSON returns the JSON encoding of Encoding.
 func (encoding Encoding) MarshalJSON() ([]byte, error) {
-	m := make(map[string]interface{}, 5+len(encoding.Extensions))
-	for k, v := range encoding.Extensions {
-		m[k] = v
+	x, err := encoding.MarshalYAML()
+	if err != nil {
+		return nil, err
 	}
+	return json.Marshal(x)
+}
+
+// MarshalYAML returns the YAML encoding of Encoding.
+func (encoding Encoding) MarshalYAML() (any, error) {
+	m := make(map[string]any, 5+len(encoding.Extensions))
+	maps.Copy(m, encoding.Extensions)
 	if x := encoding.ContentType; x != "" {
 		m["contentType"] = x
 	}
@@ -60,7 +70,7 @@ func (encoding Encoding) MarshalJSON() ([]byte, error) {
 	if x := encoding.AllowReserved; x {
 		m["allowReserved"] = x
 	}
-	return json.Marshal(m)
+	return m, nil
 }
 
 // UnmarshalJSON sets Encoding to a copy of data.
@@ -71,6 +81,7 @@ func (encoding *Encoding) UnmarshalJSON(data []byte) error {
 		return unmarshalError(err)
 	}
 	_ = json.Unmarshal(data, &x.Extensions)
+
 	delete(x.Extensions, "contentType")
 	delete(x.Extensions, "headers")
 	delete(x.Extensions, "style")
@@ -106,12 +117,7 @@ func (encoding *Encoding) Validate(ctx context.Context, opts ...ValidationOption
 		return nil
 	}
 
-	headers := make([]string, 0, len(encoding.Headers))
-	for k := range encoding.Headers {
-		headers = append(headers, k)
-	}
-	sort.Strings(headers)
-	for _, k := range headers {
+	for _, k := range componentNames(encoding.Headers) {
 		v := encoding.Headers[k]
 		if err := ValidateIdentifier(k); err != nil {
 			return nil
@@ -132,8 +138,8 @@ func (encoding *Encoding) Validate(ctx context.Context, opts ...ValidationOption
 		sm.Style == SerializationPipeDelimited && !sm.Explode,
 		sm.Style == SerializationDeepObject && sm.Explode:
 	default:
-		return fmt.Errorf("serialization method with style=%q and explode=%v is not supported by media type", sm.Style, sm.Explode)
+		return newInvalidSerializationMethod("media type", sm.Style, sm.Explode, encoding.Origin)
 	}
 
-	return validateExtensions(ctx, encoding.Extensions)
+	return validateExtensions(ctx, encoding.Extensions, encoding.Origin)
 }

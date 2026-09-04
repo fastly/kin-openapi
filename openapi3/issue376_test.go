@@ -1,11 +1,12 @@
-package openapi3
+package openapi3_test
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 func TestIssue376(t *testing.T) {
@@ -28,7 +29,7 @@ info:
   version: 1.2.3.4
 `)
 
-	loader := NewLoader()
+	loader := openapi3.NewLoader()
 
 	doc, err := loader.LoadFromData(spec)
 	require.NoError(t, err)
@@ -40,33 +41,33 @@ info:
 	require.Equal(t, 2, len(doc.Components.Schemas))
 	require.Equal(t, 0, doc.Paths.Len())
 
-	require.Equal(t, "string", doc.Components.Schemas["schema2"].Value.Properties["prop"].Value.Type)
+	require.Equal(t, &openapi3.Types{"string"}, doc.Components.Schemas["schema2"].Value.Properties["prop"].Value.Type)
 }
 
 func TestExclusiveValuesOfValuesAdditionalProperties(t *testing.T) {
-	schema := &Schema{
-		AdditionalProperties: AdditionalProperties{
-			Has:    BoolPtr(false),
-			Schema: NewSchemaRef("", &Schema{}),
+	schema := &openapi3.Schema{
+		AdditionalProperties: openapi3.AdditionalProperties{
+			Has:    openapi3.Ptr(false),
+			Schema: openapi3.NewSchemaRef("", &openapi3.Schema{}),
 		},
 	}
-	err := schema.Validate(context.Background())
+	err := schema.Validate(t.Context())
 	require.ErrorContains(t, err, ` to both `)
 
-	schema = &Schema{
-		AdditionalProperties: AdditionalProperties{
-			Has: BoolPtr(false),
+	schema = &openapi3.Schema{
+		AdditionalProperties: openapi3.AdditionalProperties{
+			Has: openapi3.Ptr(false),
 		},
 	}
-	err = schema.Validate(context.Background())
+	err = schema.Validate(t.Context())
 	require.NoError(t, err)
 
-	schema = &Schema{
-		AdditionalProperties: AdditionalProperties{
-			Schema: NewSchemaRef("", &Schema{}),
+	schema = &openapi3.Schema{
+		AdditionalProperties: openapi3.AdditionalProperties{
+			Schema: openapi3.NewSchemaRef("", &openapi3.Schema{}),
 		},
 	}
-	err = schema.Validate(context.Background())
+	err = schema.Validate(t.Context())
 	require.NoError(t, err)
 }
 
@@ -120,7 +121,7 @@ info:
 
 	for i, spec := range [][]byte{specJSON, specYAML} {
 		t.Run(fmt.Sprintf("spec%02d", i), func(t *testing.T) {
-			loader := NewLoader()
+			loader := openapi3.NewLoader()
 
 			doc, err := loader.LoadFromData(spec)
 			require.NoError(t, err)
@@ -139,7 +140,7 @@ info:
 					}
 					apaStr := ""
 					if apa != nil {
-						apaStr = fmt.Sprintf("%v", *apa)
+						apaStr = fmt.Sprint(apa)
 					}
 
 					encoded, err := propSchema.MarshalJSON()

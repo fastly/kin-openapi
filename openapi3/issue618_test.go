@@ -1,9 +1,11 @@
-package openapi3
+package openapi3_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 func TestIssue618(t *testing.T) {
@@ -24,7 +26,7 @@ paths:
                 $ref: ./testdata/schema618.yml#/components/schemas/JournalEntry
 `[1:]
 
-	loader := NewLoader()
+	loader := openapi3.NewLoader()
 	loader.IsExternalRefsAllowed = true
 	ctx := loader.Context
 
@@ -33,7 +35,7 @@ paths:
 
 	doc.InternalizeRefs(ctx, nil)
 
-	require.Contains(t, doc.Components.Schemas, "JournalEntry")
-	require.Contains(t, doc.Components.Schemas, "Record")
-	require.Contains(t, doc.Components.Schemas, "Account")
+	require.Contains(t, doc.Components.Schemas, "testdata_schema618_JournalEntry")
+	require.Contains(t, doc.Components.Schemas, "testdata_schema618_Record")
+	require.Contains(t, doc.Components.Schemas, "testdata_schema618_Account")
 }

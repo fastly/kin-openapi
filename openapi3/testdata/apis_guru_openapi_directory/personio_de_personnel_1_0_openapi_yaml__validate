@@ -1,0 +1,11 @@
+invalid components: schema "NewAttendancePeriodRequest": invalid example: Error at "/attendances/0/comment": value must be a string
+Schema:
+  {
+    "description": "Optional comment",
+    "type": "string"
+  }
+
+Value:
+  {
+    "$ref": "#/components/schemas/UpdateAttendancePeriodRequest/example/comment"
+  }

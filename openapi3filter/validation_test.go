@@ -23,13 +23,13 @@ type ExampleRequest struct {
 	Method      string
 	URL         string
 	ContentType string
-	Body        interface{}
+	Body        any
 }
 
 type ExampleResponse struct {
 	Status      int
 	ContentType string
-	Body        interface{}
+	Body        any
 }
 
 type ExampleSecurityScheme struct {
@@ -134,13 +134,13 @@ func TestFilter(t *testing.T) {
 							},
 						},
 					},
-					Responses: openapi3.NewResponses(),
+					Responses: openapi3.NewResponses(openapi3.WithStatus(200, &openapi3.ResponseRef{Value: openapi3.NewResponse().WithDescription("OK")})),
 				},
 			}),
 
 			openapi3.WithPath("/issue151", &openapi3.PathItem{
 				Get: &openapi3.Operation{
-					Responses: openapi3.NewResponses(),
+					Responses: openapi3.NewResponses(openapi3.WithStatus(200, &openapi3.ResponseRef{Value: openapi3.NewResponse().WithDescription("OK")})),
 				},
 				Parameters: openapi3.Parameters{
 					{
@@ -156,10 +156,11 @@ func TestFilter(t *testing.T) {
 		),
 	}
 
-	err := doc.Validate(context.Background())
+	err := doc.Validate(t.Context())
 	require.NoError(t, err)
 	router, err := legacyrouter.NewRouter(doc)
 	require.NoError(t, err)
+
 	expectWithDecoder := func(req ExampleRequest, resp ExampleResponse, decoder ContentParameterDecoder) error {
 		t.Logf("Request: %s %s", req.Method, req.URL)
 		httpReq, err := http.NewRequest(req.Method, req.URL, marshalReader(req.Body))
@@ -177,7 +178,7 @@ func TestFilter(t *testing.T) {
 			Route:        route,
 			ParamDecoder: decoder,
 		}
-		if err := ValidateRequest(context.Background(), requestValidationInput); err != nil {
+		if err := ValidateRequest(t.Context(), requestValidationInput); err != nil {
 			return err
 		}
 		t.Logf("Response: %d", resp.Status)
@@ -195,10 +196,11 @@ func TestFilter(t *testing.T) {
 			require.NoError(t, err)
 			responseValidationInput.SetBodyBytes(data)
 		}
-		err = ValidateResponse(context.Background(), responseValidationInput)
+		err = ValidateResponse(t.Context(), responseValidationInput)
 		require.NoError(t, err)
 		return nil
 	}
+
 	expect := func(req ExampleRequest, resp ExampleResponse) error {
 		return expectWithDecoder(req, resp, nil)
 	}
@@ -248,14 +250,14 @@ func TestFilter(t *testing.T) {
 	// Test query parameter openapi3filter
 	req = ExampleRequest{
 		Method: "POST",
-		URL:    "http://example.com/api/prefix/v/suffix?queryArgAnyOf=ae&queryArgOneOf=ac&queryArgAllOf=2017-12-31T11:59:59",
+		URL:    "http://example.com/api/prefix/v/suffix?queryArgAnyOf=ae&queryArgOneOf=ac&queryArgAllOf=2017-12-31T11:59:59Z",
 	}
 	err = expect(req, resp)
 	require.NoError(t, err)
 
 	req = ExampleRequest{
 		Method: "POST",
-		URL:    "http://example.com/api/prefix/v/suffix?queryArgAnyOf=2017-12-31T11:59:59",
+		URL:    "http://example.com/api/prefix/v/suffix?queryArgAnyOf=2017-12-31T11:59:59Z",
 	}
 	err = expect(req, resp)
 	require.NoError(t, err)
@@ -269,7 +271,7 @@ func TestFilter(t *testing.T) {
 
 	req = ExampleRequest{
 		Method: "POST",
-		URL:    "http://example.com/api/prefix/v/suffix?queryArgOneOf=2017-12-31T11:59:59",
+		URL:    "http://example.com/api/prefix/v/suffix?queryArgOneOf=2017-12-31T11:59:59Z",
 	}
 	err = expect(req, resp)
 	require.IsType(t, &RequestError{}, err)
@@ -333,8 +335,8 @@ func TestFilter(t *testing.T) {
 	require.IsType(t, &RequestError{}, err)
 
 	// Now, repeat the above two test cases using a custom parameter decoder.
-	customDecoder := func(param *openapi3.Parameter, values []string) (interface{}, *openapi3.Schema, error) {
-		var value interface{}
+	customDecoder := func(param *openapi3.Parameter, values []string) (any, *openapi3.Schema, error) {
+		var value any
 		err := json.Unmarshal([]byte(values[0]), &value)
 		schema := param.Content.Get("application/something_funny").Schema.Value
 		return value, schema, err
@@ -356,7 +358,7 @@ func TestFilter(t *testing.T) {
 	require.IsType(t, &RequestError{}, err)
 }
 
-func marshalReader(value interface{}) io.ReadCloser {
+func marshalReader(value any) io.ReadCloser {
 	if value == nil {
 		return nil
 	}
@@ -431,7 +433,7 @@ func TestValidateRequestBody(t *testing.T) {
 				req.Header.Set(headerCT, tc.mime)
 			}
 			inp := &RequestValidationInput{Request: req}
-			err := ValidateRequestBody(context.Background(), inp, tc.body)
+			err := ValidateRequestBody(t.Context(), inp, tc.body)
 
 			if tc.wantErr == nil {
 				require.NoError(t, err)
@@ -464,7 +466,7 @@ func matchReqBodyError(want, got error) bool {
 	return false
 }
 
-func toJSON(v interface{}) io.Reader {
+func toJSON(v any) io.Reader {
 	data, err := json.Marshal(v)
 	if err != nil {
 		panic(err)
@@ -558,12 +560,12 @@ func TestRootSecurityRequirementsAreUsedIfNotProvidedAtTheOperationLevel(t *test
 		doc.Paths.Set(tc.name, &openapi3.PathItem{
 			Get: &openapi3.Operation{
 				Security:  securityRequirements,
-				Responses: openapi3.NewResponses(),
+				Responses: openapi3.NewResponses(openapi3.WithStatus(200, &openapi3.ResponseRef{Value: openapi3.NewResponse().WithDescription("OK")})),
 			},
 		})
 	}
 
-	err := doc.Validate(context.Background())
+	err := doc.Validate(t.Context())
 	require.NoError(t, err)
 	router, err := legacyrouter.NewRouter(doc)
 	require.NoError(t, err)
@@ -604,7 +606,7 @@ func TestRootSecurityRequirementsAreUsedIfNotProvidedAtTheOperationLevel(t *test
 		}
 
 		// Validate the request
-		err = ValidateRequest(context.Background(), &req)
+		err = ValidateRequest(t.Context(), &req)
 		require.NoError(t, err)
 
 		for securityRequirement, validated := range schemesValidated {
@@ -683,12 +685,12 @@ func TestAnySecurityRequirementMet(t *testing.T) {
 		doc.Paths.Set(tc.name, &openapi3.PathItem{
 			Get: &openapi3.Operation{
 				Security:  securityRequirements,
-				Responses: openapi3.NewResponses(),
+				Responses: openapi3.NewResponses(openapi3.WithStatus(200, &openapi3.ResponseRef{Value: openapi3.NewResponse().WithDescription("OK")})),
 			},
 		})
 	}
 
-	err := doc.Validate(context.Background())
+	err := doc.Validate(t.Context())
 	require.NoError(t, err)
 	router, err := legacyrouter.NewRouter(&doc)
 	require.NoError(t, err)
@@ -711,7 +713,7 @@ func TestAnySecurityRequirementMet(t *testing.T) {
 		}
 
 		// Validate the security requirements
-		err = ValidateSecurityRequirements(context.Background(), &req, *route.Operation.Security)
+		err = ValidateSecurityRequirements(t.Context(), &req, *route.Operation.Security)
 
 		// If there should have been an error
 		if tc.error {
@@ -785,12 +787,12 @@ func TestAllSchemesMet(t *testing.T) {
 				Security: &openapi3.SecurityRequirements{
 					securityRequirement,
 				},
-				Responses: openapi3.NewResponses(),
+				Responses: openapi3.NewResponses(openapi3.WithStatus(200, &openapi3.ResponseRef{Value: openapi3.NewResponse().WithDescription("OK")})),
 			},
 		})
 	}
 
-	err := doc.Validate(context.Background())
+	err := doc.Validate(t.Context())
 	require.NoError(t, err)
 	router, err := legacyrouter.NewRouter(&doc)
 	require.NoError(t, err)
@@ -813,7 +815,7 @@ func TestAllSchemesMet(t *testing.T) {
 		}
 
 		// Validate the security requirements
-		err = ValidateSecurityRequirements(context.Background(), &req, *route.Operation.Security)
+		err = ValidateSecurityRequirements(t.Context(), &req, *route.Operation.Security)
 
 		// If there should have been an error
 		if tc.error {
